@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.0 (칭찬게시판 추가)</title>
+    <title>학민정부 실시간 대시보드 v5.1 (중앙 회기 제어)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -52,7 +52,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
-        console.log("🔥 Firebase 실시간 연동 (v5.0 업데이트 완료)");
+        console.log("🔥 Firebase 실시간 연동 (v5.1 중앙 회기 제어)");
 
         const { useState, useEffect } = React;
 
@@ -82,23 +82,41 @@
                 ...Array.from({ length: 10 }, (_, i) => `${i + 3}월`),
                 ...Array.from({ length: 10 }, (_, i) => `임시회의 ${i + 1}`)
             ];
-            const [currentSession, setCurrentSession] = useState('3월');
+            
+            // 🔥 현재 회기 상태 관리를 파이어베이스와 연동하기 위한 로직
+            const [currentSession, setCurrentSession] = useState('3월'); 
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
 
             const [appData, setAppData] = useState({});
 
-            // 🔥 파이어베이스 실시간 데이터 불러오기
+            // 1. 공통 설정(현재 회기 등)을 파이어베이스에서 불러오는 리스너
             useEffect(() => {
-                const unsubscribe = db.collection('classData').doc(currentSession)
+                const unsubscribeSettings = db.collection('settings').doc('global')
+                    .onSnapshot((doc) => {
+                        if (doc.exists) {
+                            setCurrentSession(doc.data().activeSession || '3월');
+                        } else {
+                            // 설정 문서가 없으면 기본값(3월)으로 최초 생성
+                            db.collection('settings').doc('global').set({ activeSession: '3월' });
+                        }
+                    });
+                return () => unsubscribeSettings();
+            }, []);
+
+            // 2. 현재 선택된 회기의 실제 데이터를 불러오는 리스너
+            useEffect(() => {
+                if (!currentSession) return;
+                const unsubscribeData = db.collection('classData').doc(currentSession)
                     .onSnapshot((doc) => {
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
+                            // 회기 데이터가 없으면 초기 빈 데이터 생성
                             const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises };
                             db.collection('classData').doc(currentSession).set(initData);
                         }
                     });
-                return () => unsubscribe();
+                return () => unsubscribeData();
             }, [currentSession]);
 
             const currentSessionData = appData[currentSession] || {
@@ -110,7 +128,12 @@
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
 
-            // 🔥 파이어베이스 데이터 덮어쓰기
+            // 🔥 관리자가 회기를 변경할 때 파이어베이스 설정 문서 업데이트
+            const handleSessionChange = (newSession) => {
+                db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
+            };
+
+            // 파이어베이스 데이터 덮어쓰기 로직
             const setStudents = (val) => db.collection('classData').doc(currentSession).set({ students: val }, { merge: true });
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
@@ -239,15 +262,23 @@
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">
-                                <select 
-                                    value={currentSession} 
-                                    onChange={(e) => setCurrentSession(e.target.value)}
-                                    className="bg-white/10 text-white border border-white/30 rounded-lg px-3 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white focus:bg-govBlue cursor-pointer hidden sm:block"
-                                >
-                                    {sessionOptions.map(opt => (
-                                        <option key={opt} value={opt} className="text-gray-900 bg-white">{opt}</option>
-                                    ))}
-                                </select>
+                                {/* 🔥 선생님 권한일 때만 콤보박스(선택기) 보임 / 나머지는 텍스트만 보임 */}
+                                {role === 'teacher' ? (
+                                    <select 
+                                        value={currentSession} 
+                                        onChange={(e) => handleSessionChange(e.target.value)}
+                                        className="bg-white/10 text-white border border-white/30 rounded-lg px-3 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white focus:bg-govBlue cursor-pointer hidden sm:block"
+                                    >
+                                        {sessionOptions.map(opt => (
+                                            <option key={opt} value={opt} className="text-gray-900 bg-white">{opt}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <span className="bg-white/10 px-3 py-1.5 rounded-lg text-sm font-bold hidden sm:block">
+                                        현재 회기: {currentSession}
+                                    </span>
+                                )}
+
                                 <span className={`px-3 py-1 rounded-full text-sm font-bold ${
                                     role === 'teacher' ? 'bg-red-500' : role === 'council' ? 'bg-blue-500' : 'bg-gray-500'
                                 }`}>
@@ -260,6 +291,19 @@
                                 )}
                                 <button onClick={openLoginModal} className="text-sm hover:text-govGold transition font-bold">권한변경</button>
                             </div>
+                        </div>
+                        {/* 모바일 화면용 회기 표시 (화면이 작을 때 상단 헤더 바로 아래에 표시) */}
+                        <div className="sm:hidden bg-govBlue/80 text-center py-1 text-xs font-bold border-t border-white/10">
+                            {role === 'teacher' ? (
+                                <span className="flex justify-center items-center gap-2">
+                                    회기 제어: 
+                                    <select value={currentSession} onChange={(e) => handleSessionChange(e.target.value)} className="bg-transparent border border-white/30 rounded px-1">
+                                        {sessionOptions.map(opt => <option key={opt} value={opt} className="text-gray-900">{opt}</option>)}
+                                    </select>
+                                </span>
+                            ) : (
+                                <span>현재 회기: {currentSession}</span>
+                            )}
                         </div>
                     </header>
 
