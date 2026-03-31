@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.1.1 (데이터 안전 동기화)</title>
+    <title>학민정부 실시간 대시보드 v5.1.2 (데이터 안전 동기화 보장)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -52,6 +52,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
+        console.log("🔥 Firebase 실시간 연동 (v5.1.2 데이터 안전 보장)");
 
         const { useState, useEffect } = React;
 
@@ -76,8 +77,8 @@
             const [pwdInput, setPwdInput] = useState('');
             const [modalType, setModalType] = useState(null);
             const [formData, setFormData] = useState({});
-
-            // 🛡️ 로딩 방어막 상태 추가 (데이터 증발 방지용)
+            
+            // 🛡️ 화면 로딩 상태 (데이터 안전장치)
             const [isDataLoaded, setIsDataLoaded] = useState(false);
 
             const sessionOptions = [
@@ -87,36 +88,38 @@
             
             const [currentSession, setCurrentSession] = useState('3월'); 
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
-
             const [appData, setAppData] = useState({});
 
-            // 1. 공통 설정(현재 회기) 불러오기
+            // 1. 공통 설정(현재 회기) 불러오기 (자동 생성 로직 제거!)
             useEffect(() => {
                 const unsubscribeSettings = db.collection('settings').doc('global')
                     .onSnapshot((doc) => {
                         if (doc.exists) {
                             setCurrentSession(doc.data().activeSession || '3월');
                         } else {
-                            db.collection('settings').doc('global').set({ activeSession: '3월' });
+                            // 로컬에서만 기본값 유지, 서버를 덮어쓰지 않음!
+                            setCurrentSession('3월');
                         }
                     });
                 return () => unsubscribeSettings();
             }, []);
 
-            // 2. 현재 선택된 회기의 실제 데이터를 불러오는 리스너
+            // 2. 현재 선택된 회기의 실제 데이터를 불러오기 (자동 생성 덮어쓰기 완벽 제거!)
             useEffect(() => {
                 if (!currentSession) return;
-                setIsDataLoaded(false); // 🔥 로딩 방어막 켜기
+                setIsDataLoaded(false);
 
                 const unsubscribeData = db.collection('classData').doc(currentSession)
                     .onSnapshot((doc) => {
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
+                            // 🔥 핵심 수정 포인트: 데이터가 없다고 판단되더라도 서버에 .set()을 쏘지 않습니다!!
+                            // 화면에 띄울 로컬 임시 데이터만 세팅하여 덮어쓰기를 원천 차단합니다.
                             const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises };
-                            db.collection('classData').doc(currentSession).set(initData);
+                            setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
-                        setIsDataLoaded(true); // 🔥 안전하게 데이터가 로드되면 방어막 해제
+                        setIsDataLoaded(true);
                     });
                 return () => unsubscribeData();
             }, [currentSession]);
@@ -130,10 +133,12 @@
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
 
+            // 🔥 관리자가 회기를 변경할 때만 안전하게 세팅
             const handleSessionChange = (newSession) => {
                 db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
             };
 
+            // 파이어베이스 데이터 덮어쓰기 로직 (수정 시에만 안전하게 해당 필드만 병합)
             const setStudents = (val) => db.collection('classData').doc(currentSession).set({ students: val }, { merge: true });
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
@@ -329,11 +334,11 @@
                     </div>
 
                     <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative">
-                        {/* 🔥 로딩 방어막 화면 (데이터가 안전하게 도착하기 전까지 조작 차단) */}
+                        {/* 🔥 안전 장치: 데이터 로딩 전 화면 조작 완벽 차단 */}
                         {!isDataLoaded ? (
-                            <div className="flex flex-col items-center justify-center py-32 space-y-4">
-                                <div className="w-16 h-16 border-4 border-govBlue border-t-transparent rounded-full animate-spin"></div>
-                                <p className="text-govBlue font-bold text-lg animate-pulse">데이터를 안전하게 동기화 중입니다...</p>
+                            <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                                <div className="w-12 h-12 border-4 border-govBlue border-t-transparent rounded-full animate-spin"></div>
+                                <p className="text-govBlue font-bold animate-pulse">데이터를 안전하게 동기화 중입니다...</p>
                             </div>
                         ) : (
                             <>
