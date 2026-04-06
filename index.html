@@ -61,6 +61,7 @@
         const initialBills = [];
         const initialExecutive = { report: '새로운 회기가 시작되었습니다.', complaints: [] };
         const initialPraises = [];
+        const initialPolls = [];
 
         // --- 아이콘 모음 ---
         const IconGov = () => <svg className="w-6 h-6 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>;
@@ -68,6 +69,7 @@
         const IconScroll = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>;
         const IconUsers = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>;
         const IconHeart = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>;
+        const IconChart = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>;
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('executive');
@@ -90,12 +92,17 @@
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
             const [appData, setAppData] = useState({});
 
-            // 1. 공통 설정(현재 회기) 불러오기 (자동 생성 로직 제거!)
+            // 1. 공통 설정(현재 회기 및 비밀번호) 불러오기 (자동 생성 로직 제거!)
             useEffect(() => {
                 const unsubscribeSettings = db.collection('settings').doc('global')
                     .onSnapshot((doc) => {
                         if (doc.exists) {
-                            setCurrentSession(doc.data().activeSession || '3월');
+                            const data = doc.data();
+                            setCurrentSession(data.activeSession || '3월');
+                            // DB에 저장된 비밀번호가 있으면 덮어씌우기
+                            if (data.passwords) {
+                                setPasswords(data.passwords);
+                            }
                         } else {
                             // 로컬에서만 기본값 유지, 서버를 덮어쓰지 않음!
                             setCurrentSession('3월');
@@ -116,7 +123,7 @@
                         } else {
                             // 🔥 핵심 수정 포인트: 데이터가 없다고 판단되더라도 서버에 .set()을 쏘지 않습니다!!
                             // 화면에 띄울 로컬 임시 데이터만 세팅하여 덮어쓰기를 원천 차단합니다.
-                            const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises };
+                            const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls };
                             setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
                         setIsDataLoaded(true);
@@ -125,13 +132,14 @@
             }, [currentSession]);
 
             const currentSessionData = appData[currentSession] || {
-                students: [], bills: [], executiveData: { report: '', complaints: [] }, praises: []
+                students: [], bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: []
             };
 
             const students = currentSessionData.students || [];
             const bills = currentSessionData.bills || [];
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
+            const polls = currentSessionData.polls || [];
 
             // 🔥 관리자가 회기를 변경할 때만 안전하게 세팅
             const handleSessionChange = (newSession) => {
@@ -143,6 +151,7 @@
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
             const setPraises = (val) => db.collection('classData').doc(currentSession).set({ praises: val }, { merge: true });
+            const setPolls = (val) => db.collection('classData').doc(currentSession).set({ polls: val }, { merge: true });
 
             const maskName = (name) => {
                 if (!isMasked) return name;
@@ -227,8 +236,12 @@
                         setStudents(students.filter(s => s.id !== formData.id));
                         break;
                     case 'changePassword':
-                        if (formData.newTeacherPwd) setPasswords(prev => ({ ...prev, teacher: formData.newTeacherPwd }));
-                        if (formData.newCouncilPwd) setPasswords(prev => ({ ...prev, council: formData.newCouncilPwd }));
+                        const newPasswords = { ...passwords };
+                        if (formData.newTeacherPwd) newPasswords.teacher = formData.newTeacherPwd;
+                        if (formData.newCouncilPwd) newPasswords.council = formData.newCouncilPwd;
+                        
+                        // Firebase에 변경된 비밀번호 영구 저장
+                        db.collection('settings').doc('global').set({ passwords: newPasswords }, { merge: true });
                         break;
                     case 'addPraise':
                         if (!formData.targetName || !formData.reason) return;
@@ -250,6 +263,39 @@
                             setStudents(students.map(s => s.id === studentId ? { ...s, coins: s.coins + rewardAmount } : s));
                             setPraises(praises.map(p => p.id === formData.id ? { ...p, status: '보상완료' } : p));
                         }
+                        break;
+                    case 'addPoll':
+                        if (!formData.title || !formData.options) return;
+                        const validOptions = formData.options.filter(opt => opt.trim() !== '');
+                        if(validOptions.length < 2) return; // 최소 2개 항목
+                        setPolls([{
+                            id: Date.now(),
+                            title: formData.title,
+                            options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })),
+                            date: new Date().toISOString().split('T')[0],
+                            status: '진행중'
+                        }, ...polls]);
+                        break;
+                    case 'viewPoll':
+                        if (!formData.studentNum || formData.selectedOptionId === null || formData.selectedOptionId === undefined) return;
+                        const updatedPolls = polls.map(poll => {
+                            if (poll.id === formData.pollId) {
+                                // 기존 투표 내역 제거 (번호 중복 방지)
+                                const newOptions = poll.options.map(opt => ({
+                                    ...opt,
+                                    voters: (opt.voters || []).filter(v => v !== Number(formData.studentNum))
+                                }));
+                                // 새 항목에 투표 추가
+                                const targetOption = newOptions.find(opt => opt.id === Number(formData.selectedOptionId));
+                                if(targetOption) targetOption.voters.push(Number(formData.studentNum));
+                                return { ...poll, options: newOptions };
+                            }
+                            return poll;
+                        });
+                        setPolls(updatedPolls);
+                        break;
+                    case 'deletePoll':
+                        setPolls(polls.filter(p => p.id !== formData.pollId));
                         break;
                 }
                 closeModal();
@@ -316,7 +362,8 @@
                                 { id: 'executive', name: '행정부', icon: <IconUsers /> },
                                 { id: 'legislative', name: '입법부', icon: <IconScroll /> },
                                 { id: 'judicial', name: '사법부', icon: <IconGavel /> },
-                                { id: 'praise', name: '익명 칭찬', icon: <IconHeart /> }
+                                { id: 'praise', name: '익명 칭찬', icon: <IconHeart /> },
+                                { id: 'poll', name: '여론조사', icon: <IconChart /> }
                             ].map((tab) => (
                                 <button
                                     key={tab.id}
@@ -568,6 +615,64 @@
                                         </div>
                                     </div>
                                 )}
+
+                                {/* 5. 여론조사 게시판 */}
+                                {activeTab === 'poll' && (
+                                    <div className="space-y-6 animate-fade-in-up">
+                                        <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                                            <div>
+                                                <h2 className="text-2xl font-black text-govBlue">📊 학급 여론조사</h2>
+                                                <p className="text-sm text-gray-500 mt-1">우리 반의 중요한 결정, 다수결로 공정하게 정해요!</p>
+                                            </div>
+                                            {(role === 'teacher' || role === 'council') && (
+                                                <button onClick={() => { setModalType('addPoll'); setFormData({ title: '', options: ['', '', ''] }); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-md transition-colors">
+                                                    + 설문 만들기
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {polls.map(poll => {
+                                                const totalVotes = poll.options.reduce((sum, opt) => sum + (opt.voters || []).length, 0);
+                                                return (
+                                                    <div key={poll.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative flex flex-col cursor-pointer" onClick={() => { setModalType('viewPoll'); setFormData({ pollId: poll.id, studentNum: '', selectedOptionId: null, ...poll }); }}>
+                                                        <div className="flex justify-between items-start mb-4">
+                                                            <h3 className="font-bold text-lg text-gray-900 line-clamp-2 pr-12">{poll.title}</h3>
+                                                            <span className="text-xs text-gray-400 whitespace-nowrap">{poll.date}</span>
+                                                        </div>
+                                                        
+                                                        <div className="space-y-3 flex-grow">
+                                                            {poll.options.map(opt => {
+                                                                const votersCount = (opt.voters || []).length;
+                                                                const percent = totalVotes === 0 ? 0 : Math.round((votersCount / totalVotes) * 100);
+                                                                return (
+                                                                    <div key={opt.id} className="relative pt-1">
+                                                                        <div className="flex justify-between items-center mb-1">
+                                                                            <span className="text-sm font-semibold text-gray-700">{opt.text}</span>
+                                                                            <span className="text-xs text-gray-500 font-bold">{votersCount}표 ({percent}%)</span>
+                                                                        </div>
+                                                                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-100">
+                                                                            <div style={{ width: `${percent}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500 transition-all duration-500"></div>
+                                                                        </div>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                                                            <span className="text-sm font-bold text-indigo-600">총 {totalVotes}명 참여</span>
+                                                            {(role === 'teacher' || role === 'council') && (
+                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('deletePoll'); setFormData({ pollId: poll.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {polls.length === 0 && (
+                                                <div className="col-span-full text-center py-10 text-gray-400 italic">현재 진행 중인 여론조사가 없습니다.</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </main>
@@ -617,6 +722,9 @@
                                     {modalType === 'addPraise' && '💖 친구 칭찬하기'}
                                     {modalType === 'deletePraise' && '칭찬 게시글 삭제'}
                                     {modalType === 'rewardPraise' && '칭찬 보상 지급하기'}
+                                    {modalType === 'addPoll' && '📊 새 여론조사 만들기'}
+                                    {modalType === 'viewPoll' && '🗳️ 투표하기'}
+                                    {modalType === 'deletePoll' && '여론조사 삭제'}
                                 </h3>
 
                                 <div className="space-y-4 mb-6">
@@ -785,6 +893,57 @@
                                             </div>
                                         </>
                                     )}
+                                    {modalType === 'addPoll' && (
+                                        <>
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">설문 주제</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="예: 다음 주 체육 시간 종목 투표" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2">선택지 항목 (최소 2개, 빈칸은 무시됨)</label>
+                                                {formData.options && formData.options.map((opt, idx) => (
+                                                    <div key={idx} className="flex mb-2">
+                                                        <span className="inline-flex items-center px-3 rounded-l border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm font-bold">{idx + 1}</span>
+                                                        <input type="text" value={opt} onChange={(e) => {
+                                                            const newOptions = [...formData.options];
+                                                            newOptions[idx] = e.target.value;
+                                                            setFormData({ ...formData, options: newOptions });
+                                                        }} className="flex-1 border border-gray-300 rounded-r p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder={`선택지 ${idx + 1}`} />
+                                                    </div>
+                                                ))}
+                                                <button onClick={() => setFormData({ ...formData, options: [...formData.options, ''] })} className="text-sm text-indigo-600 font-bold hover:text-indigo-800 mt-1">+ 선택지 추가</button>
+                                            </div>
+                                        </>
+                                    )}
+                                    {modalType === 'viewPoll' && (
+                                        <>
+                                            <div className="mb-4">
+                                                <h4 className="text-lg font-bold text-gray-900 mb-2">{formData.title}</h4>
+                                                <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
+                                                    <label className="block text-sm font-bold text-indigo-800 mb-2">내 번호 선택 (1번 ~ 18번)</label>
+                                                    <select name="studentNum" value={formData.studentNum || ''} onChange={handleFormChange} className="w-full border border-indigo-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                                        <option value="">-- 내 번호를 선택하세요 --</option>
+                                                        {Array.from({ length: 18 }, (_, i) => i + 1).map(num => (
+                                                            <option key={num} value={num}>{num}번</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-xs text-indigo-600 mt-1 font-medium">* 한 번호당 한 표만 인정됩니다. (다시 투표하면 덮어씌워집니다)</p>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">항목 선택</label>
+                                                {formData.options && formData.options.map(opt => (
+                                                    <label key={opt.id} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${formData.selectedOptionId === opt.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                                        <input type="radio" name="selectedOptionId" value={opt.id} checked={formData.selectedOptionId === opt.id} onChange={() => setFormData({ ...formData, selectedOptionId: opt.id })} className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300" />
+                                                        <span className="ml-3 font-medium text-gray-900">{opt.text}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                    {modalType === 'deletePoll' && (
+                                        <p className="text-gray-700 text-lg">해당 여론조사를 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?</p>
+                                    )}
                                 </div>
 
                                 <div className="flex justify-end space-x-2">
@@ -793,11 +952,15 @@
                                     ) : (
                                         <>
                                             <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
-                                            <button onClick={submitActionModal} className={`px-4 py-2 text-sm text-white rounded font-bold ${
-                                                (modalType === 'deleteStudent' || modalType === 'deleteBill' || modalType === 'deleteComplaint' || modalType === 'deletePraise') ? 'bg-red-600 hover:bg-red-700' : 
+                                            <button onClick={() => {
+                                                if (modalType === 'viewPoll') submitActionModal('submitVote');
+                                                else submitActionModal();
+                                            }} className={`px-4 py-2 text-sm text-white rounded font-bold ${
+                                                (modalType === 'deleteStudent' || modalType === 'deleteBill' || modalType === 'deleteComplaint' || modalType === 'deletePraise' || modalType === 'deletePoll') ? 'bg-red-600 hover:bg-red-700' : 
                                                 modalType === 'addPraise' ? 'bg-pink-500 hover:bg-pink-600' : 
-                                                modalType === 'rewardPraise' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-govBlue hover:bg-blue-900'
-                                            }`}>확인</button>
+                                                modalType === 'rewardPraise' ? 'bg-indigo-600 hover:bg-indigo-700' : 
+                                                (modalType === 'addPoll' || modalType === 'viewPoll') ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-govBlue hover:bg-blue-900'
+                                            }`}>{(modalType === 'viewPoll') ? '투표하기' : '확인'}</button>
                                         </>
                                     )}
                                 </div>
