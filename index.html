@@ -3,13 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.1.2 (데이터 안전 동기화 보장)</title>
+    <title>학민정부 실시간 대시보드 v5.4.0 (칭찬 게시판 관리 강화)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Noto Sans KR', sans-serif; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .animate-shake { animation: shake 0.2s ease-in-out 0s 2; }
     </style>
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -52,7 +58,6 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
-        console.log("🔥 Firebase 실시간 연동 (v5.1.2 데이터 안전 보장)");
 
         const { useState, useEffect } = React;
 
@@ -70,6 +75,8 @@
         const IconUsers = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>;
         const IconHeart = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>;
         const IconChart = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>;
+        const IconLock = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>;
+        const IconEye = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('executive');
@@ -79,8 +86,8 @@
             const [pwdInput, setPwdInput] = useState('');
             const [modalType, setModalType] = useState(null);
             const [formData, setFormData] = useState({});
+            const [modalError, setModalError] = useState('');
             
-            // 🛡️ 화면 로딩 상태 (데이터 안전장치)
             const [isDataLoaded, setIsDataLoaded] = useState(false);
 
             const sessionOptions = [
@@ -92,26 +99,20 @@
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
             const [appData, setAppData] = useState({});
 
-            // 1. 공통 설정(현재 회기 및 비밀번호) 불러오기 (자동 생성 로직 제거!)
+            // 1. 공통 설정 불러오기
             useEffect(() => {
                 const unsubscribeSettings = db.collection('settings').doc('global')
                     .onSnapshot((doc) => {
                         if (doc.exists) {
                             const data = doc.data();
                             setCurrentSession(data.activeSession || '3월');
-                            // DB에 저장된 비밀번호가 있으면 덮어씌우기
-                            if (data.passwords) {
-                                setPasswords(data.passwords);
-                            }
-                        } else {
-                            // 로컬에서만 기본값 유지, 서버를 덮어쓰지 않음!
-                            setCurrentSession('3월');
+                            if (data.passwords) setPasswords(data.passwords);
                         }
                     });
                 return () => unsubscribeSettings();
             }, []);
 
-            // 2. 현재 선택된 회기의 실제 데이터를 불러오기 (자동 생성 덮어쓰기 완벽 제거!)
+            // 2. 데이터 불러오기
             useEffect(() => {
                 if (!currentSession) return;
                 setIsDataLoaded(false);
@@ -121,8 +122,6 @@
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
-                            // 🔥 핵심 수정 포인트: 데이터가 없다고 판단되더라도 서버에 .set()을 쏘지 않습니다!!
-                            // 화면에 띄울 로컬 임시 데이터만 세팅하여 덮어쓰기를 원천 차단합니다.
                             const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls };
                             setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
@@ -141,12 +140,11 @@
             const praises = currentSessionData.praises || [];
             const polls = currentSessionData.polls || [];
 
-            // 🔥 관리자가 회기를 변경할 때만 안전하게 세팅
             const handleSessionChange = (newSession) => {
                 db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
             };
 
-            // 파이어베이스 데이터 덮어쓰기 로직 (수정 시에만 안전하게 해당 필드만 병합)
+            // DB 업데이트 헬퍼
             const setStudents = (val) => db.collection('classData').doc(currentSession).set({ students: val }, { merge: true });
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
@@ -175,10 +173,12 @@
             const closeModal = () => {
                 setModalType(null);
                 setFormData({});
+                setModalError('');
             };
 
             const handleFormChange = (e) => {
                 setFormData({ ...formData, [e.target.name]: e.target.value });
+                if (modalError) setModalError('');
             };
 
             const submitActionModal = () => {
@@ -226,7 +226,7 @@
                     case 'addStudent':
                         if (!formData.name) return;
                         const newId = students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1;
-                        setStudents([...students, { id: newId, name: formData.name, coins: Number(formData.coins) || 0 }]);
+                        setStudents([...students, { id: newId, name: formData.name, coins: Number(formData.coins) || 0, password: '' }]);
                         break;
                     case 'adjustCoin':
                         const amount = Number(formData.amount) || 0;
@@ -239,16 +239,16 @@
                         const newPasswords = { ...passwords };
                         if (formData.newTeacherPwd) newPasswords.teacher = formData.newTeacherPwd;
                         if (formData.newCouncilPwd) newPasswords.council = formData.newCouncilPwd;
-                        
-                        // Firebase에 변경된 비밀번호 영구 저장
                         db.collection('settings').doc('global').set({ passwords: newPasswords }, { merge: true });
                         break;
                     case 'addPraise':
-                        if (!formData.targetName || !formData.reason) return;
+                        if (!formData.targetName || !formData.reason || !formData.detail || !formData.proposerName) return;
                         setPraises([{
                             id: Date.now(),
                             targetName: formData.targetName,
-                            reason: formData.reason,
+                            proposerName: formData.proposerName, // 작성자 이름
+                            reason: formData.reason,             // 칭찬 이유
+                            detail: formData.detail,             // 상세 내용
                             date: new Date().toISOString().split('T')[0],
                             status: '대기'
                         }, ...praises]);
@@ -267,28 +267,39 @@
                     case 'addPoll':
                         if (!formData.title || !formData.options) return;
                         const validOptions = formData.options.filter(opt => opt.trim() !== '');
-                        if(validOptions.length < 2) return; // 최소 2개 항목
+                        if(validOptions.length < 2) return;
                         setPolls([{
-                            id: Date.now(),
-                            title: formData.title,
+                            id: Date.now(), title: formData.title,
                             options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })),
-                            date: new Date().toISOString().split('T')[0],
-                            status: '진행중'
+                            passwords: {},
+                            date: new Date().toISOString().split('T')[0], status: '진행중'
                         }, ...polls]);
                         break;
                     case 'viewPoll':
                         if (!formData.studentNum || formData.selectedOptionId === null || formData.selectedOptionId === undefined) return;
+                        if (!formData.studentPassword) { setModalError('비밀번호를 입력하세요.'); return; }
+                        
+                        const voterNum = Number(formData.studentNum);
+                        const currentPoll = polls.find(p => p.id === formData.pollId);
+                        const pollPasswords = currentPoll.passwords || {};
+
+                        if (pollPasswords[voterNum]) {
+                            if (pollPasswords[voterNum] !== formData.studentPassword) {
+                                setModalError('비밀번호가 일치하지 않습니다. 투표 내용을 수정할 수 없습니다.');
+                                return;
+                            }
+                        } else {
+                            pollPasswords[voterNum] = formData.studentPassword;
+                        }
+
                         const updatedPolls = polls.map(poll => {
                             if (poll.id === formData.pollId) {
-                                // 기존 투표 내역 제거 (번호 중복 방지)
                                 const newOptions = poll.options.map(opt => ({
-                                    ...opt,
-                                    voters: (opt.voters || []).filter(v => v !== Number(formData.studentNum))
+                                    ...opt, voters: (opt.voters || []).filter(v => v !== voterNum)
                                 }));
-                                // 새 항목에 투표 추가
                                 const targetOption = newOptions.find(opt => opt.id === Number(formData.selectedOptionId));
-                                if(targetOption) targetOption.voters.push(Number(formData.studentNum));
-                                return { ...poll, options: newOptions };
+                                if(targetOption) targetOption.voters.push(voterNum);
+                                return { ...poll, options: newOptions, passwords: pollPasswords };
                             }
                             return poll;
                         });
@@ -342,18 +353,6 @@
                                 <button onClick={openLoginModal} className="text-sm hover:text-govGold transition font-bold">권한변경</button>
                             </div>
                         </div>
-                        <div className="sm:hidden bg-govBlue/80 text-center py-1 text-xs font-bold border-t border-white/10">
-                            {role === 'teacher' ? (
-                                <span className="flex justify-center items-center gap-2">
-                                    회기 제어: 
-                                    <select value={currentSession} onChange={(e) => handleSessionChange(e.target.value)} className="bg-transparent border border-white/30 rounded px-1">
-                                        {sessionOptions.map(opt => <option key={opt} value={opt} className="text-gray-900">{opt}</option>)}
-                                    </select>
-                                </span>
-                            ) : (
-                                <span>현재 회기: {currentSession}</span>
-                            )}
-                        </div>
                     </header>
 
                     <div className="bg-white border-b border-gray-200 sticky top-[72px] sm:top-[76px] z-10 shadow-sm">
@@ -381,7 +380,6 @@
                     </div>
 
                     <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative">
-                        {/* 🔥 안전 장치: 데이터 로딩 전 화면 조작 완벽 차단 */}
                         {!isDataLoaded ? (
                             <div className="flex flex-col items-center justify-center py-20 space-y-4">
                                 <div className="w-12 h-12 border-4 border-govBlue border-t-transparent rounded-full animate-spin"></div>
@@ -400,44 +398,6 @@
                                                 )}
                                             </div>
                                             <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{executiveData.report}</p>
-                                        </div>
-                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h2 className="text-xl font-bold text-govBlue">📬 실시간 학급 신문고</h2>
-                                                <button onClick={() => { setModalType('addComplaint'); setFormData({ text: '' }); }} className="text-sm bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow">
-                                                    + 의견 등록하기
-                                                </button>
-                                            </div>
-                                            <div className="space-y-4">
-                                                {executiveData.complaints?.map(comp => (
-                                                    <div key={comp.id} className="p-4 border border-gray-100 bg-gray-50 rounded-lg relative">
-                                                        <div className="flex justify-between items-start mb-2" 
-                                                             onClick={() => {
-                                                                 if (role === 'teacher' || role === 'council') {
-                                                                     setModalType('manageComplaint');
-                                                                     setFormData(comp);
-                                                                 }
-                                                             }}
-                                                             className={(role === 'teacher' || role === 'council') ? 'cursor-pointer' : ''}>
-                                                            <p className="font-medium text-gray-800 pr-16">{comp.text}</p>
-                                                            <span className={`absolute top-4 right-4 text-xs px-2 py-1 rounded-full font-bold ${
-                                                                comp.status === '대기' ? 'bg-yellow-100 text-yellow-800' : 
-                                                                comp.status === '해결' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-800'
-                                                            }`}>{comp.status}</span>
-                                                        </div>
-                                                        {comp.reply && (
-                                                            <div className="mt-3 pl-4 border-l-4 border-govBlue text-sm text-gray-600">
-                                                                <span className="font-bold text-govBlue mr-2">행정부 답변:</span>{comp.reply}
-                                                            </div>
-                                                        )}
-                                                        {role === 'teacher' && (
-                                                            <div className="mt-3 text-right">
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('deleteComplaint'); setFormData({ id: comp.id }); }} className="text-xs text-red-500 hover:text-red-700 font-bold border border-red-200 px-2 py-1 rounded bg-white">삭제하기</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -471,42 +431,10 @@
                                                             <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.content}</p>
                                                             <div className="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
                                                                 <p className="text-xs text-gray-500"><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
-                                                                {role === 'teacher' && (
-                                                                    <button onClick={() => { setModalType('deleteBill'); setFormData({ id: bill.id, title: bill.title }); }} className="text-xs text-red-500 hover:text-red-700 font-bold border border-red-200 px-2 py-1 rounded">삭제</button>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     ))
                                                 )}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <h3 className="text-xl font-bold text-gray-700 mb-4 flex items-center">
-                                                <span className="text-2xl mr-2">⏳</span> 심사 중 및 부결 법안
-                                            </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {bills.filter(b => b.status !== '가결').map(bill => (
-                                                    <div key={bill.id} onClick={() => { setModalType('viewBill'); setFormData(bill); }} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full cursor-pointer hover:shadow-md transition-shadow relative">
-                                                        <div className="flex justify-between items-start mb-3">
-                                                            <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-                                                                bill.status === '계류' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800'
-                                                            }`}>{bill.status}</span>
-                                                            <span className="text-xs text-gray-400">{bill.date}</span>
-                                                        </div>
-                                                        <h3 className="text-lg font-bold text-gray-900 mb-2">{bill.title}</h3>
-                                                        <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-3">{bill.content}</p>
-                                                        <div className="mt-auto pt-4 border-t border-gray-100 text-xs text-gray-500">
-                                                            <p><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
-                                                            <p><span className="font-semibold text-gray-700">공동발의:</span> {bill.sponsors.split(', ').map(s => maskName(s)).join(', ')}</p>
-                                                        </div>
-                                                        {(role === 'teacher' || role === 'council') && bill.status === '계류' && (
-                                                            <div className="flex gap-2 mt-4 pt-2">
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '가결' }); }} className="flex-1 bg-green-50 text-green-700 py-1 rounded border border-green-200 hover:bg-green-100 text-sm font-bold">가결</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '부결' }); }} className="flex-1 bg-red-50 text-red-700 py-1 rounded border border-red-200 hover:bg-red-100 text-sm font-bold">부결</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
                                             </div>
                                         </div>
                                     </div>
@@ -520,17 +448,6 @@
                                                 <h2 className="text-2xl font-bold text-govBlue">⚖️ 사법부 학급 코인 관리</h2>
                                             </div>
                                             <div className="flex items-center space-x-3">
-                                                <label className="flex items-center cursor-pointer hidden sm:flex">
-                                                    <div className="relative">
-                                                        <input type="checkbox" className="sr-only" checked={isMasked} onChange={() => setIsMasked(!isMasked)} />
-                                                        <div className={`block w-10 h-6 rounded-full transition-colors ${isMasked ? 'bg-govBlue' : 'bg-gray-300'}`}></div>
-                                                        <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isMasked ? 'transform translate-x-4' : ''}`}></div>
-                                                    </div>
-                                                    <div className="ml-3 text-sm font-medium text-gray-700">이름 마스킹</div>
-                                                </label>
-                                                <button onClick={() => setIsMasked(!isMasked)} className="sm:hidden bg-gray-200 px-2 py-1 rounded text-xs font-bold">
-                                                    {isMasked ? '👀 이름 보기' : '🕶 이름 가리기'}
-                                                </button>
                                                 {(role === 'teacher') && (
                                                     <button onClick={() => { setModalType('addStudent'); setFormData({ name: '', coins: 0 }); }} className="bg-gray-800 text-white px-3 py-2 rounded shadow text-sm hover:bg-gray-900 font-bold">
                                                         + 학생 추가
@@ -561,7 +478,6 @@
                                                                     <div className="flex justify-center space-x-2">
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'deduct' }); }} className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold hover:bg-red-200">- 차감</button>
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'add' }); }} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold hover:bg-blue-200">+ 지급</button>
-                                                                        <button onClick={() => { setModalType('deleteStudent'); setFormData({ id: student.id, name: student.name }); }} className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold hover:bg-gray-200">삭제</button>
                                                                     </div>
                                                                 </td>
                                                             )}
@@ -579,38 +495,45 @@
                                         <div className="bg-gradient-to-r from-pink-50 to-red-50 p-6 rounded-xl shadow-sm border border-pink-100">
                                             <div className="flex justify-between items-center mb-4">
                                                 <h2 className="text-2xl font-black text-pink-600">💖 익명 칭찬 게시판</h2>
-                                                <button onClick={() => { setModalType('addPraise'); setFormData({ targetName: '', reason: '' }); }} className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 font-bold shadow-md transition-colors">
+                                                <button onClick={() => { setModalType('addPraise'); setFormData({ targetName: '', proposerName: '', reason: '', detail: '' }); }} className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 font-bold shadow-md transition-colors">
                                                     + 칭찬 글쓰기
                                                 </button>
                                             </div>
-                                            <p className="text-pink-800 text-sm font-medium">우리 반 친구들의 아름다운 행동을 익명으로 제보해주세요. 선생님이 확인 후 코인 보상을 지급합니다!</p>
+                                            <p className="text-pink-800 text-sm font-medium">우리 반 친구들의 선행을 제보하세요. 상세 내용을 성의 있게 적어주세요!</p>
                                         </div>
-                                        
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {praises.map(praise => (
-                                                <div key={praise.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative">
+                                                <div key={praise.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative group">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <h3 className="font-bold text-lg text-gray-900">받는 사람: <span className="text-govBlue">{praise.targetName}</span></h3>
                                                         <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-                                                            praise.status === '보상완료' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                                                            praise.status === '보상완료' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'
                                                         }`}>{praise.status}</span>
                                                     </div>
-                                                    <p className="text-gray-700 text-sm mb-4 leading-relaxed bg-gray-50 p-3 rounded">{praise.reason}</p>
-                                                    <div className="flex justify-between items-center mt-2 border-t pt-3">
+                                                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                                        <p className="text-sm font-bold text-gray-500 mb-1">칭찬 이유</p>
+                                                        <p className="text-gray-800 font-medium">{praise.reason}</p>
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-4 border-t pt-3">
                                                         <span className="text-xs text-gray-400">{praise.date} 작성됨</span>
-                                                        {role === 'teacher' && (
-                                                            <div className="space-x-2">
-                                                                <button onClick={() => { setModalType('deletePraise'); setFormData({ id: praise.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
-                                                                {praise.status !== '보상완료' && (
-                                                                    <button onClick={() => { setModalType('rewardPraise'); setFormData({ id: praise.id, targetName: praise.targetName, rewardStudentId: '', rewardAmount: '' }); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-bold border border-indigo-200">보상지급</button>
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                        <div className="flex space-x-2">
+                                                            {role === 'teacher' && (
+                                                                <>
+                                                                    <button onClick={() => { setModalType('viewPraiseDetail'); setFormData(praise); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded font-bold border border-indigo-200 flex items-center">
+                                                                        <IconEye /> 상세 보기
+                                                                    </button>
+                                                                    <button onClick={() => { setModalType('deletePraise'); setFormData({ id: praise.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
+                                                                    {praise.status !== '보상완료' && (
+                                                                        <button onClick={() => { setModalType('rewardPraise'); setFormData({ id: praise.id, targetName: praise.targetName, rewardStudentId: '', rewardAmount: '' }); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-bold border border-indigo-200">보상지급</button>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
                                             {praises.length === 0 && (
-                                                <div className="col-span-full text-center py-10 text-gray-400 italic">아직 등록된 칭찬이 없습니다. 첫 번째 칭찬의 주인공을 만들어주세요!</div>
+                                                <div className="col-span-full text-center py-10 text-gray-400 italic">아직 등록된 칭찬글이 없습니다.</div>
                                             )}
                                         </div>
                                     </div>
@@ -635,12 +558,11 @@
                                             {polls.map(poll => {
                                                 const totalVotes = poll.options.reduce((sum, opt) => sum + (opt.voters || []).length, 0);
                                                 return (
-                                                    <div key={poll.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative flex flex-col cursor-pointer" onClick={() => { setModalType('viewPoll'); setFormData({ pollId: poll.id, studentNum: '', selectedOptionId: null, ...poll }); }}>
+                                                    <div key={poll.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative flex flex-col cursor-pointer group" onClick={() => { setModalType('viewPoll'); setFormData({ pollId: poll.id, studentNum: '', selectedOptionId: null, studentPassword: '', ...poll }); }}>
                                                         <div className="flex justify-between items-start mb-4">
                                                             <h3 className="font-bold text-lg text-gray-900 line-clamp-2 pr-12">{poll.title}</h3>
                                                             <span className="text-xs text-gray-400 whitespace-nowrap">{poll.date}</span>
                                                         </div>
-                                                        
                                                         <div className="space-y-3 flex-grow">
                                                             {poll.options.map(opt => {
                                                                 const votersCount = (opt.voters || []).length;
@@ -659,17 +581,18 @@
                                                             })}
                                                         </div>
                                                         <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-                                                            <span className="text-sm font-bold text-indigo-600">총 {totalVotes}명 참여</span>
-                                                            {(role === 'teacher' || role === 'council') && (
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('deletePoll'); setFormData({ pollId: poll.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
-                                                            )}
+                                                            <div className="flex gap-2">
+                                                                <span className="text-sm font-bold text-indigo-600">총 {totalVotes}명 참여</span>
+                                                                {role === 'teacher' && (
+                                                                    <button onClick={(e) => { e.stopPropagation(); setModalType('viewPollStatus'); setFormData(poll); }} className="text-xs flex items-center bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-bold text-gray-600 transition-colors border border-gray-200">
+                                                                        <IconEye /> 투표 현황
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 );
                                             })}
-                                            {polls.length === 0 && (
-                                                <div className="col-span-full text-center py-10 text-gray-400 italic">현재 진행 중인 여론조사가 없습니다.</div>
-                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -677,257 +600,100 @@
                         )}
                     </main>
 
-                    <footer className="bg-white border-t border-gray-200 mt-auto py-6">
-                        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
-                            &copy; 2023 학민정부(學民政府) 민주주의 교실 프로젝트. All rights reserved.
-                        </div>
-                    </footer>
-
-                    {/* 로그인 모달 */}
-                    {showLoginModal && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-                                <h3 className="text-xl font-bold text-govBlue mb-2">권한 변경</h3>
-                                <p className="text-sm text-gray-600 mb-4">
-                                    접근 권한 비밀번호를 입력하세요.<br/>
-                                    <span className="text-xs text-gray-400">(선생님/임원 전용 비밀번호, 일반학생은 빈칸)</span>
-                                </p>
-                                <input type="password" value={pwdInput} onChange={(e) => setPwdInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} className="w-full border border-gray-300 rounded p-2 mb-4 focus:outline-none focus:border-govBlue focus:ring-1 focus:ring-govBlue" placeholder="비밀번호 입력" autoFocus />
-                                <div className="flex justify-end space-x-2">
-                                    <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
-                                    <button onClick={submitLogin} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold">확인</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* 통합 액션 모달 */}
                     {modalType && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
                             <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-                                <h3 className="text-xl font-bold text-govBlue mb-4 border-b pb-2">
-                                    {modalType === 'editReport' && '행정부 보고 수정'}
-                                    {modalType === 'addComplaint' && '신문고 의견 등록'}
-                                    {modalType === 'manageComplaint' && '신문고 답변 및 상태 관리'}
-                                    {modalType === 'deleteComplaint' && '신문고 게시글 삭제'}
-                                    {modalType === 'addBill' && '새 법안 상정'}
-                                    {modalType === 'editBill' && '법안 내용 수정'}
-                                    {modalType === 'deleteBill' && '법안 삭제'}
-                                    {modalType === 'confirmBill' && `법안 처리`}
-                                    {modalType === 'viewBill' && '법안 상세 보기'}
-                                    {modalType === 'addStudent' && '학생 추가'}
-                                    {modalType === 'adjustCoin' && `코인 관리`}
-                                    {modalType === 'deleteStudent' && '학생 삭제'}
-                                    {modalType === 'changePassword' && '비밀번호 설정'}
-                                    {modalType === 'addPraise' && '💖 친구 칭찬하기'}
-                                    {modalType === 'deletePraise' && '칭찬 게시글 삭제'}
-                                    {modalType === 'rewardPraise' && '칭찬 보상 지급하기'}
+                                <h3 className="text-xl font-bold text-govBlue mb-4 border-b pb-2 flex items-center">
+                                    {modalType === 'viewPoll' && '🗳️ 투표하기 (번호 전용 비번 필요)'}
+                                    {modalType === 'viewPollStatus' && '📊 실시간 투표 현황'}
                                     {modalType === 'addPoll' && '📊 새 여론조사 만들기'}
-                                    {modalType === 'viewPoll' && '🗳️ 투표하기'}
-                                    {modalType === 'deletePoll' && '여론조사 삭제'}
+                                    {modalType === 'addPraise' && '💖 친구 칭찬 글쓰기'}
+                                    {modalType === 'viewPraiseDetail' && '🔍 칭찬글 상세 내용'}
+                                    {modalType === 'rewardPraise' && '🎁 보상 지급'}
+                                    {modalType === 'editReport' && '보고서 수정'}
+                                    {modalType === 'addStudent' && '학생 명부 추가'}
+                                    {modalType === 'adjustCoin' && '코인 지급/차감'}
+                                    {modalType === 'deletePoll' && '삭제 확인'}
+                                    {modalType === 'deletePraise' && '삭제 확인'}
                                 </h3>
 
                                 <div className="space-y-4 mb-6">
-                                    {modalType === 'editReport' && (
-                                        <textarea name="report" value={formData.report || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="주간 활동 보고를 입력하세요..."></textarea>
-                                    )}
-                                    {modalType === 'addComplaint' && (
-                                        <textarea name="text" value={formData.text || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-24 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="학급에 건의할 사항을 상세히 적어주세요..."></textarea>
-                                    )}
-                                    {modalType === 'deleteComplaint' && (
-                                        <p className="text-gray-700 text-lg">해당 신문고 글을 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?</p>
-                                    )}
-                                    {(modalType === 'addBill' || modalType === 'editBill') && (
-                                        <>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">법안 제목</label>
-                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="예: 쉬는 시간 연장 법안" />
-                                            </div>
-                                            <div className="flex space-x-3 mt-3">
-                                                <div className="flex-1">
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">발의자</label>
-                                                    <input type="text" name="proposer" value={formData.proposer || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="발의자 이름" />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">공동발의</label>
-                                                    <input type="text" name="sponsors" value={formData.sponsors || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="공동발의자 이름" />
-                                                </div>
-                                            </div>
-                                            <div className="mt-3">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">법안 내용</label>
-                                                <textarea name="content" value={formData.content || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 h-24 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="법안의 상세 내용을 적어주세요..."></textarea>
-                                            </div>
-                                        </>
-                                    )}
-                                    {modalType === 'deleteBill' && (
-                                        <p className="text-gray-700 text-lg">
-                                            정말 <strong>[{formData.title}]</strong> 법안을 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?<br/>
-                                            <span className="text-sm text-gray-500 mt-2 block">이 작업은 되돌릴 수 없습니다.</span>
-                                        </p>
-                                    )}
-                                    {modalType === 'manageComplaint' && (
-                                        <>
-                                            <div className="bg-gray-50 p-3 rounded mb-4 border border-gray-200">
-                                                <p className="text-sm text-gray-800 font-medium">{formData.text}</p>
-                                            </div>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">처리 상태</label>
-                                                <select name="status" value={formData.status || '대기'} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue">
-                                                    <option value="대기">대기</option>
-                                                    <option value="해결">해결</option>
-                                                    <option value="보류">보류</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">행정부 답변</label>
-                                                <textarea name="reply" value={formData.reply || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-24 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="답변을 입력하세요..."></textarea>
-                                            </div>
-                                        </>
-                                    )}
-                                    {modalType === 'confirmBill' && (
-                                        <p className="text-gray-700 text-lg">
-                                            <strong>[{formData.title}]</strong> 법안을 <span className={formData.status === '가결' ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{formData.status}</span> 처리하시겠습니까?
-                                        </p>
-                                    )}
-                                    {modalType === 'viewBill' && (
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <span className={`text-sm px-3 py-1 rounded-full font-bold ${
-                                                    formData.status === '계류' ? 'bg-gray-100 text-gray-600' : 
-                                                    formData.status === '가결' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                }`}>{formData.status}</span>
-                                                <span className="text-sm text-gray-500">{formData.date}</span>
-                                            </div>
-                                            <h4 className="text-2xl font-black text-gray-900 mt-2">{formData.title}</h4>
-                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[120px] text-base">
-                                                {formData.content}
-                                            </div>
-                                            <div className="text-sm text-gray-600 border-t pt-4">
-                                                <p className="mb-1"><strong className="text-gray-800">발의자:</strong> {maskName(formData.proposer)}</p>
-                                                <p><strong className="text-gray-800">공동발의:</strong> {formData.sponsors.split(', ').map(s => maskName(s)).join(', ')}</p>
-                                            </div>
-                                            {(role === 'teacher' || role === 'council') && formData.status !== '가결' && (
-                                                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-200">
-                                                    <button onClick={() => setModalType('editBill')} className="flex-1 bg-gray-100 text-gray-700 py-2 rounded hover:bg-gray-200 font-bold text-sm transition-colors">수정하기</button>
-                                                    <button onClick={() => setModalType('deleteBill')} className="flex-1 bg-red-50 text-red-700 py-2 rounded hover:bg-red-100 font-bold text-sm transition-colors">삭제하기</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {modalType === 'addStudent' && (
-                                        <>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">학생 이름</label>
-                                                <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="학생 이름" />
-                                            </div>
-                                            <div className="mt-3">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">초기 코인</label>
-                                                <input type="number" name="coins" value={formData.coins || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="0" />
-                                            </div>
-                                        </>
-                                    )}
-                                    {modalType === 'adjustCoin' && (
-                                        <>
-                                            <div className="bg-gray-50 p-3 rounded mb-3">
-                                                <p className="text-sm text-gray-600">대상 학생: <strong className="text-gray-900 text-lg">{maskName(formData.name)}</strong></p>
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">{formData.type === 'add' ? '지급할 금액' : '차감할 금액'}</label>
-                                                <input type="number" name="amount" value={formData.amount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="금액 숫자만 입력" />
-                                            </div>
-                                        </>
-                                    )}
-                                    {modalType === 'deleteStudent' && (
-                                        <p className="text-gray-700 text-lg">
-                                            정말 <strong>{maskName(formData.name)}</strong> 학생을 명부에서 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?<br/>
-                                            <span className="text-sm text-gray-500 mt-2 block">이 작업은 되돌릴 수 없습니다.</span>
-                                        </p>
-                                    )}
-                                    {modalType === 'changePassword' && (
-                                        <>
-                                            <div className="bg-yellow-50 p-3 rounded mb-4 border border-yellow-200">
-                                                <p className="text-sm text-yellow-800 font-medium">관리자 및 자치임원의 접속 비밀번호를 변경할 수 있습니다.</p>
-                                            </div>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">👩‍🏫 관리자(교사) 비밀번호</label>
-                                                <input type="text" name="newTeacherPwd" value={formData.newTeacherPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="새 비밀번호 입력" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">🧑‍💼 자치임원 비밀번호</label>
-                                                <input type="text" name="newCouncilPwd" value={formData.newCouncilPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="새 비밀번호 입력" />
-                                            </div>
-                                        </>
-                                    )}
                                     {modalType === 'addPraise' && (
                                         <>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-pink-700 mb-1">누구를 칭찬할까요?</label>
-                                                <input type="text" name="targetName" value={formData.targetName || ''} onChange={handleFormChange} className="w-full border border-pink-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-500 bg-pink-50" placeholder="친구 이름" />
+                                            <div className="bg-pink-50 p-4 rounded-lg border border-pink-100 mb-2">
+                                                <p className="text-xs text-pink-700 font-bold leading-relaxed">
+                                                    ⚠️ 경고: 상세 내용을 성의 있게 적지 않거나 허위 사실을 기재할 경우, 게시글이 불시에 삭제될 수 있습니다.
+                                                </p>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-gray-700 mb-1">칭찬하는 사람 (나)</label>
+                                                    <input type="text" name="proposerName" value={formData.proposerName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="내 이름" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 받는 친구</label>
+                                                    <input type="text" name="targetName" value={formData.targetName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="친구 이름" />
+                                                </div>
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-bold text-pink-700 mb-1">어떤 아름다운 행동을 했나요?</label>
-                                                <textarea name="reason" value={formData.reason || ''} onChange={handleFormChange} className="w-full border border-pink-300 rounded p-3 h-24 focus:outline-none focus:ring-2 focus:ring-pink-500 bg-pink-50" placeholder="선행 내용을 자세히 적어주세요!"></textarea>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 이유 (간략하게)</label>
+                                                <input type="text" name="reason" value={formData.reason || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="예: 급식 당번을 도와줌" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 상세 내용 (구체적으로)</label>
+                                                <textarea name="detail" value={formData.detail || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="언제, 어디서, 어떤 도움을 주었는지 자세히 적어주세요."></textarea>
                                             </div>
                                         </>
                                     )}
-                                    {modalType === 'deletePraise' && (
-                                        <p className="text-gray-700 text-lg">해당 칭찬 게시글을 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?</p>
-                                    )}
-                                    {modalType === 'rewardPraise' && (
-                                        <>
-                                            <div className="bg-indigo-50 p-3 rounded mb-4 border border-indigo-200">
-                                                <p className="text-sm text-indigo-800 font-medium">[{formData.targetName}] 학생에게 칭찬 보상(코인)을 지급합니다.</p>
-                                            </div>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">명부에서 학생 선택</label>
-                                                <select name="rewardStudentId" value={formData.rewardStudentId || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                                    <option value="">-- 학생을 선택하세요 --</option>
-                                                    {students.map(s => (
-                                                        <option key={s.id} value={s.id}>{s.name} (현재: {s.coins}C)</option>
-                                                    ))}
-                                                </select>
+
+                                    {modalType === 'viewPraiseDetail' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                                                <p className="text-sm font-bold text-indigo-800">작성자: {formData.proposerName}</p>
+                                                <p className="text-xs text-indigo-600">{formData.date}</p>
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">지급할 코인</label>
-                                                <input type="number" name="rewardAmount" value={formData.rewardAmount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="예: 100" />
+                                                <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-tight">받는 사람 / 이유</p>
+                                                <p className="text-lg font-black text-govBlue">{formData.targetName} / {formData.reason}</p>
                                             </div>
-                                        </>
+                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                                <p className="text-xs font-bold text-gray-400 mb-2 uppercase">상세 제보 내용</p>
+                                                <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{formData.detail}</p>
+                                            </div>
+                                            <p className="text-[10px] text-gray-400 font-medium italic">* 이 내용은 오직 선생님만 확인할 수 있습니다.</p>
+                                        </div>
                                     )}
-                                    {modalType === 'addPoll' && (
-                                        <>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">설문 주제</label>
-                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="예: 다음 주 체육 시간 종목 투표" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-2">선택지 항목 (최소 2개, 빈칸은 무시됨)</label>
-                                                {formData.options && formData.options.map((opt, idx) => (
-                                                    <div key={idx} className="flex mb-2">
-                                                        <span className="inline-flex items-center px-3 rounded-l border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm font-bold">{idx + 1}</span>
-                                                        <input type="text" value={opt} onChange={(e) => {
-                                                            const newOptions = [...formData.options];
-                                                            newOptions[idx] = e.target.value;
-                                                            setFormData({ ...formData, options: newOptions });
-                                                        }} className="flex-1 border border-gray-300 rounded-r p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder={`선택지 ${idx + 1}`} />
-                                                    </div>
-                                                ))}
-                                                <button onClick={() => setFormData({ ...formData, options: [...formData.options, ''] })} className="text-sm text-indigo-600 font-bold hover:text-indigo-800 mt-1">+ 선택지 추가</button>
-                                            </div>
-                                        </>
-                                    )}
+
                                     {modalType === 'viewPoll' && (
                                         <>
                                             <div className="mb-4">
                                                 <h4 className="text-lg font-bold text-gray-900 mb-2">{formData.title}</h4>
-                                                <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
+                                                <div className={`bg-indigo-50 p-4 rounded-xl border ${modalError ? 'border-red-300 animate-shake' : 'border-indigo-100'}`}>
                                                     <label className="block text-sm font-bold text-indigo-800 mb-2">내 번호 선택 (1번 ~ 18번)</label>
-                                                    <select name="studentNum" value={formData.studentNum || ''} onChange={handleFormChange} className="w-full border border-indigo-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                                    <select name="studentNum" value={formData.studentNum || ''} onChange={handleFormChange} className="w-full border border-indigo-300 rounded p-2 mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
                                                         <option value="">-- 내 번호를 선택하세요 --</option>
-                                                        {Array.from({ length: 18 }, (_, i) => i + 1).map(num => (
-                                                            <option key={num} value={num}>{num}번</option>
-                                                        ))}
+                                                        {Array.from({ length: 18 }, (_, i) => i + 1).map(num => {
+                                                            const isVoted = Object.keys(formData.passwords || {}).includes(String(num));
+                                                            return (
+                                                                <option key={num} value={num}>
+                                                                    {num}번 {isVoted ? '(이미 투표함)' : ''}
+                                                                </option>
+                                                            );
+                                                        })}
                                                     </select>
-                                                    <p className="text-xs text-indigo-600 mt-1 font-medium">* 한 번호당 한 표만 인정됩니다. (다시 투표하면 덮어씌워집니다)</p>
+                                                    <label className="block text-sm font-bold text-indigo-800 mb-2 flex items-center">
+                                                        <IconLock /> 투표 비밀번호 입력
+                                                    </label>
+                                                    <input 
+                                                        type="password" 
+                                                        name="studentPassword" 
+                                                        value={formData.studentPassword || ''} 
+                                                        onChange={handleFormChange} 
+                                                        className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${modalError ? 'border-red-500' : 'border-indigo-300'}`}
+                                                        placeholder="비밀번호를 입력하세요" 
+                                                    />
+                                                    {modalError && <p className="text-red-600 text-xs mt-2 font-bold">❌ {modalError}</p>}
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
@@ -941,28 +707,119 @@
                                             </div>
                                         </>
                                     )}
-                                    {modalType === 'deletePoll' && (
-                                        <p className="text-gray-700 text-lg">해당 여론조사를 <span className="text-red-600 font-bold">삭제</span>하시겠습니까?</p>
+
+                                    {modalType === 'viewPollStatus' && (
+                                        <div className="space-y-4">
+                                            <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+                                                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                                    <thead className="bg-gray-100">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left font-bold text-gray-600">번호</th>
+                                                            <th className="px-4 py-2 text-left font-bold text-gray-600">선택 항목</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-100">
+                                                        {formData.options?.flatMap(opt => 
+                                                            (opt.voters || []).map(voterNum => ({ voterNum, text: opt.text }))
+                                                        ).sort((a, b) => a.voterNum - b.voterNum).map(item => (
+                                                            <tr key={item.voterNum} className="hover:bg-indigo-50/30">
+                                                                <td className="px-4 py-2 font-bold text-indigo-600">{item.voterNum}번</td>
+                                                                <td className="px-4 py-2 text-gray-700">{item.text}</td>
+                                                            </tr>
+                                                        ))}
+                                                        {(!formData.options || formData.options.every(o => !o.voters || o.voters.length === 0)) && (
+                                                            <tr>
+                                                                <td colSpan="2" className="px-4 py-8 text-center text-gray-400 italic">데이터가 없습니다.</td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {modalType === 'addPoll' && (
+                                        <>
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">설문 주제</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="설문 제목" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2">선택지 항목</label>
+                                                {formData.options?.map((opt, idx) => (
+                                                    <input key={idx} type="text" value={opt} onChange={(e) => {
+                                                        const newOpts = [...formData.options];
+                                                        newOpts[idx] = e.target.value;
+                                                        setFormData({ ...formData, options: newOpts });
+                                                    }} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder={`선택지 ${idx+1}`} />
+                                                ))}
+                                                <button onClick={() => setFormData({...formData, options: [...formData.options, '']})} className="text-xs font-bold text-indigo-600">+ 항목 추가</button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {modalType === 'rewardPraise' && (
+                                        <>
+                                            <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 mb-3">
+                                                <p className="text-sm font-bold text-indigo-800">지급 대상: {formData.targetName}</p>
+                                            </div>
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">명부에서 선택</label>
+                                                <select name="rewardStudentId" value={formData.rewardStudentId || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2">
+                                                    <option value="">학생을 선택하세요</option>
+                                                    {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.coins}C)</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">지급 코인</label>
+                                                <input type="number" name="rewardAmount" value={formData.rewardAmount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="지급 수량" />
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {modalType.includes('delete') && <p className="text-gray-700">정말로 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.</p>}
+                                    {modalType === 'editReport' && (
+                                        <textarea name="report" value={formData.report || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="보고서 내용"></textarea>
+                                    )}
+                                    {modalType === 'addStudent' && (
+                                        <>
+                                            <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="이름" />
+                                            <input type="number" name="coins" value={formData.coins || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="초기 코인" />
+                                        </>
+                                    )}
+                                    {modalType === 'adjustCoin' && (
+                                        <input type="number" name="amount" value={formData.amount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="수량 입력" />
+                                    )}
+                                    {modalType === 'changePassword' && (
+                                        <>
+                                            <input type="text" name="newTeacherPwd" value={formData.newTeacherPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="교사 비밀번호" />
+                                            <input type="text" name="newCouncilPwd" value={formData.newCouncilPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="자치회 비밀번호" />
+                                        </>
                                     )}
                                 </div>
 
                                 <div className="flex justify-end space-x-2">
-                                    {modalType === 'viewBill' ? (
-                                        <button onClick={closeModal} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold w-full mt-2">닫기</button>
-                                    ) : (
-                                        <>
-                                            <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
-                                            <button onClick={() => {
-                                                if (modalType === 'viewPoll') submitActionModal('submitVote');
-                                                else submitActionModal();
-                                            }} className={`px-4 py-2 text-sm text-white rounded font-bold ${
-                                                (modalType === 'deleteStudent' || modalType === 'deleteBill' || modalType === 'deleteComplaint' || modalType === 'deletePraise' || modalType === 'deletePoll') ? 'bg-red-600 hover:bg-red-700' : 
-                                                modalType === 'addPraise' ? 'bg-pink-500 hover:bg-pink-600' : 
-                                                modalType === 'rewardPraise' ? 'bg-indigo-600 hover:bg-indigo-700' : 
-                                                (modalType === 'addPoll' || modalType === 'viewPoll') ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-govBlue hover:bg-blue-900'
-                                            }`}>{(modalType === 'viewPoll') ? '투표하기' : '확인'}</button>
-                                        </>
+                                    <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
+                                    {modalType !== 'viewPraiseDetail' && modalType !== 'viewPollStatus' && (
+                                        <button onClick={submitActionModal} className={`px-4 py-2 text-sm text-white rounded font-bold ${
+                                            modalType.includes('delete') ? 'bg-red-600 hover:bg-red-700' : 'bg-govBlue hover:bg-blue-900'
+                                        }`}>확인</button>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 로그인 모달 */}
+                    {showLoginModal && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+                                <h3 className="text-xl font-bold text-govBlue mb-2">권한 변경</h3>
+                                <p className="text-sm text-gray-600 mb-4">비밀번호를 입력하세요.</p>
+                                <input type="password" value={pwdInput} onChange={(e) => setPwdInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} className="w-full border border-gray-300 rounded p-2 mb-4 focus:outline-none focus:border-govBlue" placeholder="비밀번호 입력" autoFocus />
+                                <div className="flex justify-end space-x-2">
+                                    <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
+                                    <button onClick={submitLogin} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold">확인</button>
                                 </div>
                             </div>
                         </div>
