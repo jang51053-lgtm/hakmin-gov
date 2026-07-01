@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.5.1 (입법부 기능 완벽 복구)</title>
+    <title>학민정부 실시간 대시보드 v5.6 (자유게시판 신설)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -67,6 +67,7 @@
         const initialExecutive = { report: '새로운 회기가 시작되었습니다.', complaints: [] };
         const initialPraises = [];
         const initialPolls = [];
+        const initialFreePosts = []; // 자유게시판 초기 데이터 추가
 
         // --- 아이콘 모음 ---
         const IconGov = () => <svg className="w-6 h-6 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>;
@@ -77,6 +78,7 @@
         const IconChart = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>;
         const IconLock = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>;
         const IconEye = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
+        const IconMessage = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>;
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('executive');
@@ -122,7 +124,14 @@
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
-                            const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls };
+                            const initData = { 
+                                students: initialStudents, 
+                                bills: initialBills, 
+                                executiveData: initialExecutive, 
+                                praises: initialPraises, 
+                                polls: initialPolls,
+                                freePosts: initialFreePosts // 자유게시판 데이터 초기화 포함
+                            };
                             setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
                         setIsDataLoaded(true);
@@ -131,7 +140,7 @@
             }, [currentSession]);
 
             const currentSessionData = appData[currentSession] || {
-                students: [], bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: []
+                students: [], bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: [], freePosts: []
             };
 
             const students = currentSessionData.students || [];
@@ -139,6 +148,7 @@
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
             const polls = currentSessionData.polls || [];
+            const freePosts = currentSessionData.freePosts || []; // 자유게시판 데이터 참조
 
             const handleSessionChange = (newSession) => {
                 db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
@@ -150,6 +160,7 @@
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
             const setPraises = (val) => db.collection('classData').doc(currentSession).set({ praises: val }, { merge: true });
             const setPolls = (val) => db.collection('classData').doc(currentSession).set({ polls: val }, { merge: true });
+            const setFreePosts = (val) => db.collection('classData').doc(currentSession).set({ freePosts: val }, { merge: true }); // 자유게시판 업데이트 헬퍼
 
             const maskName = (name) => {
                 if (!isMasked) return name;
@@ -308,8 +319,75 @@
                     case 'deletePoll':
                         setPolls(polls.filter(p => p.id !== formData.pollId));
                         break;
+                    case 'addFreePost':
+                        if (!formData.title || !formData.content) return;
+                        setFreePosts([{
+                            id: Date.now(),
+                            title: formData.title,
+                            content: formData.content,
+                            authorName: formData.authorName || '익명',
+                            date: new Date().toISOString().split('T')[0],
+                            likes: 0,
+                            comments: []
+                        }, ...freePosts]);
+                        break;
+                    case 'deleteFreePost':
+                        setFreePosts(freePosts.filter(p => p.id !== formData.id));
+                        break;
                 }
                 closeModal();
+            };
+
+            // 자유게시판 전용 핸들러 (모달을 닫지 않고 바로 상태 업데이트)
+            const handleAddCommentSubmit = () => {
+                if (!formData.newCommentText || !formData.newCommentText.trim()) return;
+                const newComment = {
+                    id: Date.now(),
+                    text: formData.newCommentText.trim(),
+                    authorName: formData.newCommentAuthor || '익명',
+                    date: new Date().toISOString().split('T')[0]
+                };
+                const updatedPosts = freePosts.map(p => {
+                    if (p.id === formData.id) {
+                        return { ...p, comments: [...(p.comments || []), newComment] };
+                    }
+                    return p;
+                });
+                setFreePosts(updatedPosts);
+                // 현재 열려있는 모달 폼 데이터도 즉시 업데이트
+                setFormData({ 
+                    ...formData, 
+                    comments: [...(formData.comments || []), newComment], 
+                    newCommentText: '', 
+                    newCommentAuthor: formData.newCommentAuthor // 작성자 이름은 유지
+                }); 
+            };
+
+            const handleDeleteComment = (postId, commentId) => {
+                const updatedPosts = freePosts.map(p => {
+                    if (p.id === postId) {
+                        return { ...p, comments: (p.comments || []).filter(c => c.id !== commentId) };
+                    }
+                    return p;
+                });
+                setFreePosts(updatedPosts);
+                if (formData.id === postId) {
+                    setFormData({ ...formData, comments: (formData.comments || []).filter(c => c.id !== commentId) });
+                }
+            };
+
+            const handleLikePost = (postId) => {
+                const updatedPosts = freePosts.map(p => {
+                    if (p.id === postId) {
+                        return { ...p, likes: (p.likes || 0) + 1 };
+                    }
+                    return p;
+                });
+                setFreePosts(updatedPosts);
+                if(formData && formData.id === postId) {
+                    const updatedPost = updatedPosts.find(p => p.id === postId);
+                    setFormData(updatedPost);
+                }
             };
 
             return (
@@ -362,7 +440,8 @@
                                 { id: 'legislative', name: '입법부', icon: <IconScroll /> },
                                 { id: 'judicial', name: '사법부', icon: <IconGavel /> },
                                 { id: 'praise', name: '익명 칭찬', icon: <IconHeart /> },
-                                { id: 'poll', name: '여론조사', icon: <IconChart /> }
+                                { id: 'poll', name: '여론조사', icon: <IconChart /> },
+                                { id: 'freeboard', name: '자유게시판', icon: <IconMessage /> } // 자유게시판 탭 추가
                             ].map((tab) => (
                                 <button
                                     key={tab.id}
@@ -445,7 +524,7 @@
                                     </div>
                                 )}
 
-                                {/* 2. 입법부 (기능 완벽 복구) */}
+                                {/* 2. 입법부 */}
                                 {activeTab === 'legislative' && (
                                     <div className="space-y-8 animate-fade-in-up">
                                         <div className="flex justify-between items-center">
@@ -483,7 +562,7 @@
                                             </div>
                                         </div>
 
-                                        {/* 복구된 심사 중 및 부결 법안 섹션 */}
+                                        {/* 심사 중 및 부결 법안 섹션 */}
                                         <div>
                                             <h3 className="text-xl font-bold text-gray-700 mb-4 flex items-center">
                                                 <span className="text-2xl mr-2">⏳</span> 심사 중 및 부결 법안
@@ -683,6 +762,83 @@
                                         </div>
                                     </div>
                                 )}
+
+                                {/* 6. 자유게시판 */}
+                                {activeTab === 'freeboard' && (
+                                    <div className="space-y-6 animate-fade-in-up">
+                                        <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                                            <div>
+                                                <h2 className="text-2xl font-black text-govBlue">💬 자유게시판</h2>
+                                                <p className="text-sm text-gray-500 mt-1">자유롭게 생각을 나누고 소통해요!</p>
+                                            </div>
+                                            <button onClick={() => { setModalType('addFreePost'); setFormData({ title: '', content: '', authorName: '' }); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 font-bold shadow-md transition-colors">
+                                                + 글쓰기
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {(() => {
+                                                const sortedPosts = [...freePosts].sort((a, b) => b.id - a.id); // 기본 최신순
+                                                let bestPost = null;
+                                                let otherPosts = sortedPosts;
+
+                                                if (sortedPosts.length > 0) {
+                                                    const maxLikes = Math.max(...sortedPosts.map(p => p.likes || 0));
+                                                    if (maxLikes > 0) {
+                                                        // 가장 공감이 많은 글 찾기 (동률일 경우 최신글 우선)
+                                                        bestPost = sortedPosts.find(p => (p.likes || 0) === maxLikes);
+                                                        otherPosts = sortedPosts.filter(p => p.id !== bestPost.id);
+                                                    }
+                                                }
+
+                                                return (
+                                                    <>
+                                                        {bestPost && (
+                                                            <div onClick={() => { setModalType('viewFreePost'); setFormData({...bestPost, newCommentText: '', newCommentAuthor: ''}); }} className="bg-yellow-50 p-5 rounded-xl shadow border-2 border-yellow-300 cursor-pointer hover:shadow-md transition-all relative">
+                                                                <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-black px-3 py-1 rounded-bl-lg">👑 베스트 공감</div>
+                                                                <div className="flex justify-between items-start mb-2 mt-2">
+                                                                    <h3 className="text-lg font-bold text-gray-900">{bestPost.title}</h3>
+                                                                    <span className="text-xs text-gray-500">{bestPost.date}</span>
+                                                                </div>
+                                                                <p className="text-sm text-gray-600 line-clamp-2 mb-3">{bestPost.content}</p>
+                                                                <div className="flex justify-between items-center text-xs text-gray-500 border-t border-yellow-200 pt-3">
+                                                                    <span>작성자: {maskName(bestPost.authorName)}</span>
+                                                                    <div className="flex space-x-3">
+                                                                        <span className="font-bold text-red-500">❤️ {bestPost.likes || 0}</span>
+                                                                        <span className="font-bold text-blue-500">💬 {(bestPost.comments || []).length}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            {otherPosts.map(post => (
+                                                                <div key={post.id} onClick={() => { setModalType('viewFreePost'); setFormData({...post, newCommentText: '', newCommentAuthor: ''}); }} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all flex flex-col">
+                                                                    <div className="flex justify-between items-start mb-2">
+                                                                        <h3 className="text-md font-bold text-gray-900 line-clamp-1">{post.title}</h3>
+                                                                        <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{post.date}</span>
+                                                                    </div>
+                                                                    <p className="text-sm text-gray-600 line-clamp-2 mb-4 flex-grow">{post.content}</p>
+                                                                    <div className="flex justify-between items-center text-xs text-gray-500 border-t border-gray-100 pt-3 mt-auto">
+                                                                        <span>{maskName(post.authorName)}</span>
+                                                                        <div className="flex space-x-3">
+                                                                            <span className="text-red-400 font-medium">❤️ {post.likes || 0}</span>
+                                                                            <span className="text-blue-400 font-medium">💬 {(post.comments || []).length}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {freePosts.length === 0 && (
+                                                                <div className="col-span-full text-center py-10 text-gray-400 italic">첫 번째 글의 주인공이 되어보세요!</div>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+
                             </>
                         )}
                     </main>
@@ -712,11 +868,93 @@
                                     {modalType === 'adjustCoin' && '코인 지급/차감'}
                                     {modalType === 'deletePoll' && '삭제 확인'}
                                     {modalType === 'deletePraise' && '삭제 확인'}
+
+                                    {/* 자유게시판 모달 타이틀 */}
+                                    {modalType === 'addFreePost' && '📝 자유게시판 글쓰기'}
+                                    {modalType === 'viewFreePost' && '📖 자유게시판 글보기'}
+                                    {modalType === 'deleteFreePost' && '게시글 삭제 확인'}
                                 </h3>
 
                                 <div className="space-y-4 mb-6">
+                                    {/* 자유게시판 모달 내용 */}
+                                    {modalType === 'addFreePost' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">제목</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="글 제목을 입력하세요" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">작성자 이름 (선택)</label>
+                                                <input type="text" name="authorName" value={formData.authorName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="익명으로 남기려면 비워두세요" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">내용</label>
+                                                <textarea name="content" value={formData.content || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="자유롭게 이야기를 남겨주세요."></textarea>
+                                            </div>
+                                        </>
+                                    )}
 
-                                    {/* 복구된 입법부 관련 모달 폼들 */}
+                                    {modalType === 'viewFreePost' && (
+                                        <div className="space-y-4">
+                                            {/* Post Header */}
+                                            <div className="flex justify-between items-start">
+                                                <h4 className="text-xl font-bold text-gray-900 pr-4">{formData.title}</h4>
+                                                <span className="text-xs text-gray-400 whitespace-nowrap mt-1">{formData.date}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-600 font-bold border-b pb-2">작성자: {maskName(formData.authorName)}</p>
+
+                                            {/* Post Content */}
+                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 whitespace-pre-wrap min-h-[120px] text-sm md:text-base border border-gray-100">
+                                                {formData.content}
+                                            </div>
+
+                                            {/* Like Button & Admin Delete */}
+                                            <div className="flex justify-between items-center pt-2">
+                                                <button onClick={() => handleLikePost(formData.id)} className="flex items-center space-x-2 px-4 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-full font-bold text-sm transition-colors border border-red-100 shadow-sm">
+                                                    <span>❤️ 공감해요</span>
+                                                    <span className="bg-white px-2 py-0.5 rounded-full border border-red-200 text-xs">{formData.likes || 0}</span>
+                                                </button>
+                                                {(role === 'teacher' || role === 'council') && (
+                                                    <button onClick={() => { setModalType('deleteFreePost'); setFormData({ id: formData.id }); }} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded hover:bg-gray-200 font-bold">글 삭제</button>
+                                                )}
+                                            </div>
+
+                                            {/* Comments Section */}
+                                            <div className="mt-6 border-t pt-4">
+                                                <h5 className="font-bold text-gray-800 mb-3 text-sm">💬 댓글 ({(formData.comments || []).length})</h5>
+                                                
+                                                <div className="space-y-2 max-h-48 overflow-y-auto mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                                                    {(formData.comments || []).length === 0 ? (
+                                                        <p className="text-center text-sm text-gray-400 py-4">첫 댓글을 남겨보세요!</p>
+                                                    ) : (
+                                                        (formData.comments || []).map(comment => (
+                                                            <div key={comment.id} className="bg-white p-2.5 rounded shadow-sm border border-gray-100 text-sm flex justify-between items-start group">
+                                                                <div className="pr-2">
+                                                                    <span className="font-bold text-govBlue mr-2 text-xs">{maskName(comment.authorName)}</span>
+                                                                    <span className="text-gray-700 break-all">{comment.text}</span>
+                                                                </div>
+                                                                <div className="flex flex-col items-end space-y-1 min-w-[50px]">
+                                                                    <span className="text-[10px] text-gray-400">{comment.date}</span>
+                                                                    {(role === 'teacher' || role === 'council') && (
+                                                                        <button onClick={() => handleDeleteComment(formData.id, comment.id)} className="text-[10px] text-red-500 hover:text-red-700 font-bold bg-red-50 px-1 rounded hidden group-hover:block">삭제</button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+
+                                                {/* Add Comment Form */}
+                                                <div className="flex space-x-2 bg-white p-1">
+                                                    <input type="text" name="newCommentAuthor" value={formData.newCommentAuthor || ''} onChange={handleFormChange} placeholder="이름(선택)" className="w-20 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
+                                                    <input type="text" name="newCommentText" value={formData.newCommentText || ''} onChange={handleFormChange} onKeyDown={(e) => e.key === 'Enter' && handleAddCommentSubmit()} placeholder="댓글을 입력하세요..." className="flex-1 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
+                                                    <button onClick={handleAddCommentSubmit} className="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">등록</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 기존 모달 폼들 유지 */}
                                     {(modalType === 'addBill' || modalType === 'editBill') && (
                                         <>
                                             <div className="mb-4">
@@ -772,7 +1010,6 @@
                                         </p>
                                     )}
 
-                                    {/* 기타 모달 폼들 */}
                                     {modalType === 'addComplaint' && (
                                         <textarea name="text" value={formData.text || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="학급에 건의할 사항을 상세히 적어주세요. 욕설이나 비방은 삭제될 수 있습니다."></textarea>
                                     )}
@@ -976,7 +1213,7 @@
                                 </div>
 
                                 <div className="flex justify-end space-x-2">
-                                    {modalType === 'viewBill' ? (
+                                    {modalType === 'viewBill' || modalType === 'viewFreePost' ? (
                                         <button onClick={closeModal} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold w-full mt-2">닫기</button>
                                     ) : (
                                         <>
