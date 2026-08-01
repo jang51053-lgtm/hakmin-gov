@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.6 (자유게시판 신설)</title>
+    <title>학민정부 실시간 대시보드 v5.6 (개정안 기능 추가)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -44,7 +44,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- Firebase 초기화 ---
         const firebaseConfig = {
             apiKey: "AIzaSyCVJmFud6HYoKMHzB71oGTUEDJ0jwcrWy4",
             authDomain: "hakmin-gov.firebaseapp.com",
@@ -61,15 +60,33 @@
 
         const { useState, useEffect } = React;
 
-        // --- 초기 데이터 뼈대 ---
         const initialStudents = [];
         const initialBills = [];
         const initialExecutive = { report: '새로운 회기가 시작되었습니다.', complaints: [] };
         const initialPraises = [];
         const initialPolls = [];
-        const initialFreePosts = []; // 자유게시판 초기 데이터 추가
+        const initialFreePosts = [];
 
-        // --- 아이콘 모음 ---
+        // 초기 전역 법률 데이터 뼈대
+        const initialLawsData = [
+            {
+                id: 'constitution',
+                title: '학민정부 헌법',
+                articles: [
+                    { articleNum: 1, title: '총강', clauses: [{ clauseNum: 1, text: '대한학급은 민주공화국이다.' }, { clauseNum: 2, text: '학급의 주권은 학생에게 있고, 모든 권력은 학생으로부터 나온다.' }] },
+                    { articleNum: 2, title: '국민의 권리와 의무', clauses: [{ clauseNum: 1, text: '모든 학생은 학급 내에서 평등하다.' }, { clauseNum: 2, text: '모든 학생은 정해진 학급의 규칙을 준수할 의무를 진다.' }] }
+                ]
+            },
+            {
+                id: 'law-life',
+                title: '학급 생활법',
+                articles: [
+                    { articleNum: 1, title: '쉬는 시간 보장', clauses: [{ clauseNum: 1, text: '모든 학생은 쉬는 시간에 충분한 휴식을 취할 권리가 있다.' }, { clauseNum: 2, text: '쉬는 시간 중 타인의 휴식을 방해하는 행위를 금지한다.' }] },
+                    { articleNum: 2, title: '수업 준비', clauses: [{ clauseNum: 1, text: '수업 시작 종이 울리면 자리에 앉아 수업 준비를 마쳐야 한다.' }] }
+                ]
+            }
+        ];
+
         const IconGov = () => <svg className="w-6 h-6 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>;
         const IconGavel = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>;
         const IconScroll = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>;
@@ -79,6 +96,7 @@
         const IconLock = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>;
         const IconEye = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
         const IconMessage = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>;
+        const IconEdit = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>;
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('executive');
@@ -89,8 +107,12 @@
             const [modalType, setModalType] = useState(null);
             const [formData, setFormData] = useState({});
             const [modalError, setModalError] = useState('');
-            
             const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+            // 입법부 전용 State
+            const [legisSubTab, setLegisSubTab] = useState('bills'); 
+            const [selectedLawId, setSelectedLawId] = useState('');
+            const [globalLaws, setGlobalLaws] = useState([]);
 
             const sessionOptions = [
                 ...Array.from({ length: 10 }, (_, i) => `${i + 3}월`),
@@ -100,8 +122,7 @@
             const [currentSession, setCurrentSession] = useState('3월'); 
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
             const [appData, setAppData] = useState({});
-
-            // 1. 공통 설정 불러오기
+            
             useEffect(() => {
                 const unsubscribeSettings = db.collection('settings').doc('global')
                     .onSnapshot((doc) => {
@@ -111,27 +132,40 @@
                             if (data.passwords) setPasswords(data.passwords);
                         }
                     });
-                return () => unsubscribeSettings();
+
+                // 전역 법률 데이터 연동
+                const unsubscribeLaws = db.collection('settings').doc('laws')
+                    .onSnapshot((doc) => {
+                        if (doc.exists) {
+                            const data = doc.data();
+                            setGlobalLaws(data.lawList || []);
+                        } else {
+                            db.collection('settings').doc('laws').set({ lawList: initialLawsData });
+                            setGlobalLaws(initialLawsData);
+                        }
+                    });
+
+                return () => {
+                    unsubscribeSettings();
+                    unsubscribeLaws();
+                };
             }, []);
 
-            // 2. 데이터 불러오기
+            useEffect(() => {
+                if (globalLaws.length > 0 && !globalLaws.find(l => l.id === selectedLawId)) {
+                    setSelectedLawId(globalLaws[0].id);
+                }
+            }, [globalLaws, selectedLawId]);
+
             useEffect(() => {
                 if (!currentSession) return;
                 setIsDataLoaded(false);
-
                 const unsubscribeData = db.collection('classData').doc(currentSession)
                     .onSnapshot((doc) => {
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
-                            const initData = { 
-                                students: initialStudents, 
-                                bills: initialBills, 
-                                executiveData: initialExecutive, 
-                                praises: initialPraises, 
-                                polls: initialPolls,
-                                freePosts: initialFreePosts // 자유게시판 데이터 초기화 포함
-                            };
+                            const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls, freePosts: initialFreePosts };
                             setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
                         setIsDataLoaded(true);
@@ -148,19 +182,17 @@
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
             const polls = currentSessionData.polls || [];
-            const freePosts = currentSessionData.freePosts || []; // 자유게시판 데이터 참조
+            const freePosts = currentSessionData.freePosts || [];
 
-            const handleSessionChange = (newSession) => {
-                db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
-            };
-
-            // DB 업데이트 헬퍼
+            const handleSessionChange = (newSession) => db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
+            
             const setStudents = (val) => db.collection('classData').doc(currentSession).set({ students: val }, { merge: true });
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
             const setPraises = (val) => db.collection('classData').doc(currentSession).set({ praises: val }, { merge: true });
             const setPolls = (val) => db.collection('classData').doc(currentSession).set({ polls: val }, { merge: true });
-            const setFreePosts = (val) => db.collection('classData').doc(currentSession).set({ freePosts: val }, { merge: true }); // 자유게시판 업데이트 헬퍼
+            const setFreePosts = (val) => db.collection('classData').doc(currentSession).set({ freePosts: val }, { merge: true });
+            const updateGlobalLaws = (newLawsList) => db.collection('settings').doc('laws').set({ lawList: newLawsList }, { merge: true });
 
             const maskName = (name) => {
                 if (!isMasked) return name;
@@ -169,58 +201,72 @@
                 return name.charAt(0) + '*' + name.slice(2);
             };
 
-            const openLoginModal = () => {
-                setPwdInput('');
-                setShowLoginModal(true);
+            const getCircledNumber = (num) => {
+                const circles = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮'];
+                return circles[num - 1] || `${num}.`;
             };
 
+            const openLoginModal = () => { setPwdInput(''); setShowLoginModal(true); };
             const submitLogin = () => {
                 if (pwdInput === passwords.teacher) setRole('teacher');
                 else if (pwdInput === passwords.council) setRole('council');
                 else setRole('student');
                 setShowLoginModal(false);
             };
-
-            const closeModal = () => {
-                setModalType(null);
-                setFormData({});
-                setModalError('');
-            };
-
-            const handleFormChange = (e) => {
-                setFormData({ ...formData, [e.target.name]: e.target.value });
-                if (modalError) setModalError('');
-            };
+            const closeModal = () => { setModalType(null); setFormData({}); setModalError(''); };
+            const handleFormChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); if (modalError) setModalError(''); };
 
             const submitActionModal = () => {
                 switch(modalType) {
-                    case 'editReport':
-                        setExecutiveData({ ...executiveData, report: formData.report });
-                        break;
-                    case 'addComplaint':
-                        if (!formData.text) return;
-                        setExecutiveData({
-                            ...executiveData,
-                            complaints: [...(executiveData.complaints || []), { id: Date.now(), text: formData.text, status: '대기', reply: '' }]
+                    case 'addLaw':
+                    case 'editLaw':
+                        if (!formData.title) return;
+                        const updatedArticles = (formData.articles || []).map((art, idx) => {
+                            const validClauses = (art.clauses || []).filter(c => c.text && c.text.trim() !== '').map((c, cIdx) => ({ clauseNum: cIdx + 1, text: c.text.trim() }));
+                            return { articleNum: idx + 1, title: art.title, clauses: validClauses };
                         });
+                        const newLaw = { id: formData.id || 'law_' + Date.now(), title: formData.title, articles: updatedArticles };
+                        let newLawsList = modalType === 'addLaw' ? [...globalLaws, newLaw] : globalLaws.map(l => l.id === newLaw.id ? newLaw : l);
+                        updateGlobalLaws(newLawsList);
+                        if(modalType === 'addLaw') setSelectedLawId(newLaw.id);
                         break;
-                    case 'manageComplaint':
-                        setExecutiveData({
-                            ...executiveData,
-                            complaints: executiveData.complaints.map(c => c.id === formData.id ? { ...c, status: formData.status, reply: formData.reply } : c)
-                        });
-                        break;
-                    case 'deleteComplaint':
-                        setExecutiveData({
-                            ...executiveData,
-                            complaints: (executiveData.complaints || []).filter(c => c.id !== formData.id)
-                        });
+                    case 'deleteLaw':
+                        const filteredLaws = globalLaws.filter(l => l.id !== formData.id);
+                        updateGlobalLaws(filteredLaws);
+                        if (selectedLawId === formData.id) setSelectedLawId(filteredLaws.length > 0 ? filteredLaws[0].id : '');
                         break;
                     case 'addBill':
                         if (!formData.title || !formData.content) return;
                         setBills([{
                             id: Date.now(), title: formData.title, proposer: formData.proposer || '익명',
-                            sponsors: formData.sponsors || '없음', content: formData.content, status: '계류',
+                            sponsors: formData.sponsors || '없음', content: formData.content, status: '계류', date: new Date().toISOString().split('T')[0]
+                        }, ...bills]);
+                        break;
+                    case 'addAmendmentBill':
+                        if (!formData.title || !formData.amendmentContent) return;
+                        
+                        // 개정 대상 법률 정보 정확하게 텍스트화
+                        const tLaw = globalLaws.find(l => l.id === formData.targetLawId) || globalLaws[0];
+                        const tArt = tLaw?.articles.find(a => String(a.articleNum) === String(formData.targetArticleNum)) || tLaw?.articles[0];
+                        
+                        const targetClauseId = formData.targetClauseNum || (typeof tArt?.clauses?.[0] === 'string' ? 1 : tArt?.clauses?.[0]?.clauseNum) || 1;
+                        const tClause = tArt?.clauses?.find((c, idx) => {
+                            const cNum = typeof c === 'string' ? idx + 1 : c.clauseNum;
+                            return String(cNum) === String(targetClauseId);
+                        }) || tArt?.clauses?.[0];
+                        
+                        const tClauseNum = typeof tClause === 'string' ? (tArt.clauses.indexOf(tClause) + 1) : tClause?.clauseNum;
+                        const tClauseText = typeof tClause === 'string' ? tClause : tClause?.text;
+
+                        const targetText = tLaw && tArt && tClause 
+                            ? `[개정 대상: ${tLaw.title} 제${tArt.articleNum}조 ${tClauseNum}항]\n원문: ${tClauseText}\n\n` 
+                            : '[개정 대상 미지정]\n\n';
+                        
+                        const finalContent = `${targetText}[개정 제안 내용]\n${formData.amendmentContent}`;
+
+                        setBills([{
+                            id: Date.now(), title: formData.title, proposer: formData.proposer || '익명',
+                            sponsors: formData.sponsors || '없음', content: finalContent, status: '계류', 
                             date: new Date().toISOString().split('T')[0]
                         }, ...bills]);
                         break;
@@ -228,11 +274,18 @@
                         if (!formData.title || !formData.content) return;
                         setBills(bills.map(b => b.id === formData.id ? { ...b, title: formData.title, proposer: formData.proposer, sponsors: formData.sponsors, content: formData.content } : b));
                         break;
-                    case 'deleteBill':
-                        setBills(bills.filter(b => b.id !== formData.id));
+                    case 'deleteBill': setBills(bills.filter(b => b.id !== formData.id)); break;
+                    case 'confirmBill': setBills(bills.map(b => b.id === formData.id ? { ...b, status: formData.status } : b)); break;
+                    case 'editReport': setExecutiveData({ ...executiveData, report: formData.report }); break;
+                    case 'addComplaint':
+                        if (!formData.text) return;
+                        setExecutiveData({ ...executiveData, complaints: [...(executiveData.complaints || []), { id: Date.now(), text: formData.text, status: '대기', reply: '' }] });
                         break;
-                    case 'confirmBill':
-                        setBills(bills.map(b => b.id === formData.id ? { ...b, status: formData.status } : b));
+                    case 'manageComplaint':
+                        setExecutiveData({ ...executiveData, complaints: executiveData.complaints.map(c => c.id === formData.id ? { ...c, status: formData.status, reply: formData.reply } : c) });
+                        break;
+                    case 'deleteComplaint':
+                        setExecutiveData({ ...executiveData, complaints: (executiveData.complaints || []).filter(c => c.id !== formData.id) });
                         break;
                     case 'addStudent':
                         if (!formData.name) return;
@@ -243,9 +296,7 @@
                         const amount = Number(formData.amount) || 0;
                         setStudents(students.map(s => s.id === formData.id ? { ...s, coins: formData.type === 'add' ? s.coins + amount : Math.max(0, s.coins - amount) } : s));
                         break;
-                    case 'deleteStudent':
-                        setStudents(students.filter(s => s.id !== formData.id));
-                        break;
+                    case 'deleteStudent': setStudents(students.filter(s => s.id !== formData.id)); break;
                     case 'changePassword':
                         const newPasswords = { ...passwords };
                         if (formData.newTeacherPwd) newPasswords.teacher = formData.newTeacherPwd;
@@ -254,19 +305,9 @@
                         break;
                     case 'addPraise':
                         if (!formData.targetName || !formData.reason || !formData.detail || !formData.proposerName) return;
-                        setPraises([{
-                            id: Date.now(),
-                            targetName: formData.targetName,
-                            proposerName: formData.proposerName, 
-                            reason: formData.reason,             
-                            detail: formData.detail,             
-                            date: new Date().toISOString().split('T')[0],
-                            status: '대기'
-                        }, ...praises]);
+                        setPraises([{ id: Date.now(), targetName: formData.targetName, proposerName: formData.proposerName, reason: formData.reason, detail: formData.detail, date: new Date().toISOString().split('T')[0], status: '대기' }, ...praises]);
                         break;
-                    case 'deletePraise':
-                        setPraises(praises.filter(p => p.id !== formData.id));
-                        break;
+                    case 'deletePraise': setPraises(praises.filter(p => p.id !== formData.id)); break;
                     case 'rewardPraise':
                         const studentId = Number(formData.rewardStudentId);
                         const rewardAmount = Number(formData.rewardAmount);
@@ -279,35 +320,19 @@
                         if (!formData.title || !formData.options) return;
                         const validOptions = formData.options.filter(opt => opt.trim() !== '');
                         if(validOptions.length < 2) return;
-                        setPolls([{
-                            id: Date.now(), title: formData.title,
-                            options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })),
-                            passwords: {},
-                            date: new Date().toISOString().split('T')[0], status: '진행중'
-                        }, ...polls]);
+                        setPolls([{ id: Date.now(), title: formData.title, options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })), passwords: {}, date: new Date().toISOString().split('T')[0], status: '진행중' }, ...polls]);
                         break;
                     case 'viewPoll':
                         if (!formData.studentNum || formData.selectedOptionId === null || formData.selectedOptionId === undefined) return;
                         if (!formData.studentPassword) { setModalError('비밀번호를 입력하세요.'); return; }
-                        
                         const voterNum = Number(formData.studentNum);
                         const currentPoll = polls.find(p => p.id === formData.pollId);
                         const pollPasswords = currentPoll.passwords || {};
-
-                        if (pollPasswords[voterNum]) {
-                            if (pollPasswords[voterNum] !== formData.studentPassword) {
-                                setModalError('비밀번호가 일치하지 않습니다. 투표 내용을 수정할 수 없습니다.');
-                                return;
-                            }
-                        } else {
-                            pollPasswords[voterNum] = formData.studentPassword;
-                        }
-
+                        if (pollPasswords[voterNum] && pollPasswords[voterNum] !== formData.studentPassword) { setModalError('비밀번호가 일치하지 않습니다.'); return; } 
+                        else { pollPasswords[voterNum] = formData.studentPassword; }
                         const updatedPolls = polls.map(poll => {
                             if (poll.id === formData.pollId) {
-                                const newOptions = poll.options.map(opt => ({
-                                    ...opt, voters: (opt.voters || []).filter(v => v !== voterNum)
-                                }));
+                                const newOptions = poll.options.map(opt => ({ ...opt, voters: (opt.voters || []).filter(v => v !== voterNum) }));
                                 const targetOption = newOptions.find(opt => opt.id === Number(formData.selectedOptionId));
                                 if(targetOption) targetOption.voters.push(voterNum);
                                 return { ...poll, options: newOptions, passwords: pollPasswords };
@@ -316,78 +341,34 @@
                         });
                         setPolls(updatedPolls);
                         break;
-                    case 'deletePoll':
-                        setPolls(polls.filter(p => p.id !== formData.pollId));
-                        break;
+                    case 'deletePoll': setPolls(polls.filter(p => p.id !== formData.pollId)); break;
                     case 'addFreePost':
                         if (!formData.title || !formData.content) return;
-                        setFreePosts([{
-                            id: Date.now(),
-                            title: formData.title,
-                            content: formData.content,
-                            authorName: formData.authorName || '익명',
-                            date: new Date().toISOString().split('T')[0],
-                            likes: 0,
-                            comments: []
-                        }, ...freePosts]);
+                        setFreePosts([{ id: Date.now(), title: formData.title, content: formData.content, authorName: formData.authorName || '익명', date: new Date().toISOString().split('T')[0], likes: 0, comments: [] }, ...freePosts]);
                         break;
-                    case 'deleteFreePost':
-                        setFreePosts(freePosts.filter(p => p.id !== formData.id));
-                        break;
+                    case 'deleteFreePost': setFreePosts(freePosts.filter(p => p.id !== formData.id)); break;
                 }
                 closeModal();
             };
 
-            // 자유게시판 전용 핸들러 (모달을 닫지 않고 바로 상태 업데이트)
             const handleAddCommentSubmit = () => {
                 if (!formData.newCommentText || !formData.newCommentText.trim()) return;
-                const newComment = {
-                    id: Date.now(),
-                    text: formData.newCommentText.trim(),
-                    authorName: formData.newCommentAuthor || '익명',
-                    date: new Date().toISOString().split('T')[0]
-                };
-                const updatedPosts = freePosts.map(p => {
-                    if (p.id === formData.id) {
-                        return { ...p, comments: [...(p.comments || []), newComment] };
-                    }
-                    return p;
-                });
+                const newComment = { id: Date.now(), text: formData.newCommentText.trim(), authorName: formData.newCommentAuthor || '익명', date: new Date().toISOString().split('T')[0] };
+                const updatedPosts = freePosts.map(p => p.id === formData.id ? { ...p, comments: [...(p.comments || []), newComment] } : p);
                 setFreePosts(updatedPosts);
-                // 현재 열려있는 모달 폼 데이터도 즉시 업데이트
-                setFormData({ 
-                    ...formData, 
-                    comments: [...(formData.comments || []), newComment], 
-                    newCommentText: '', 
-                    newCommentAuthor: formData.newCommentAuthor // 작성자 이름은 유지
-                }); 
+                setFormData({ ...formData, comments: [...(formData.comments || []), newComment], newCommentText: '', newCommentAuthor: formData.newCommentAuthor }); 
             };
 
             const handleDeleteComment = (postId, commentId) => {
-                const updatedPosts = freePosts.map(p => {
-                    if (p.id === postId) {
-                        return { ...p, comments: (p.comments || []).filter(c => c.id !== commentId) };
-                    }
-                    return p;
-                });
+                const updatedPosts = freePosts.map(p => p.id === postId ? { ...p, comments: (p.comments || []).filter(c => c.id !== commentId) } : p);
                 setFreePosts(updatedPosts);
-                if (formData.id === postId) {
-                    setFormData({ ...formData, comments: (formData.comments || []).filter(c => c.id !== commentId) });
-                }
+                if (formData.id === postId) setFormData({ ...formData, comments: (formData.comments || []).filter(c => c.id !== commentId) });
             };
 
             const handleLikePost = (postId) => {
-                const updatedPosts = freePosts.map(p => {
-                    if (p.id === postId) {
-                        return { ...p, likes: (p.likes || 0) + 1 };
-                    }
-                    return p;
-                });
+                const updatedPosts = freePosts.map(p => p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p);
                 setFreePosts(updatedPosts);
-                if(formData && formData.id === postId) {
-                    const updatedPost = updatedPosts.find(p => p.id === postId);
-                    setFormData(updatedPost);
-                }
+                if(formData && formData.id === postId) setFormData(updatedPosts.find(p => p.id === postId));
             };
 
             return (
@@ -403,30 +384,17 @@
                             </div>
                             <div className="flex items-center space-x-4">
                                 {role === 'teacher' ? (
-                                    <select 
-                                        value={currentSession} 
-                                        onChange={(e) => handleSessionChange(e.target.value)}
-                                        className="bg-white/10 text-white border border-white/30 rounded-lg px-3 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white focus:bg-govBlue cursor-pointer hidden sm:block"
-                                    >
-                                        {sessionOptions.map(opt => (
-                                            <option key={opt} value={opt} className="text-gray-900 bg-white">{opt}</option>
-                                        ))}
+                                    <select value={currentSession} onChange={(e) => handleSessionChange(e.target.value)} className="bg-white/10 text-white border border-white/30 rounded-lg px-3 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white focus:bg-govBlue cursor-pointer hidden sm:block">
+                                        {sessionOptions.map(opt => <option key={opt} value={opt} className="text-gray-900 bg-white">{opt}</option>)}
                                     </select>
                                 ) : (
-                                    <span className="bg-white/10 px-3 py-1.5 rounded-lg text-sm font-bold hidden sm:block">
-                                        현재 회기: {currentSession}
-                                    </span>
+                                    <span className="bg-white/10 px-3 py-1.5 rounded-lg text-sm font-bold hidden sm:block">현재 회기: {currentSession}</span>
                                 )}
-
-                                <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                                    role === 'teacher' ? 'bg-red-500' : role === 'council' ? 'bg-blue-500' : 'bg-gray-500'
-                                }`}>
+                                <span className={`px-3 py-1 rounded-full text-sm font-bold ${ role === 'teacher' ? 'bg-red-500' : role === 'council' ? 'bg-blue-500' : 'bg-gray-500' }`}>
                                     {role === 'teacher' ? '👩‍🏫 관리자' : role === 'council' ? '🧑‍💼 자치임원' : '👦 일반학생'}
                                 </span>
                                 {(role === 'teacher') && (
-                                    <button onClick={() => { setModalType('changePassword'); setFormData({ newTeacherPwd: passwords.teacher, newCouncilPwd: passwords.council }); }} className="text-sm hover:text-govGold transition hidden sm:block">
-                                        ⚙️ 비번설정
-                                    </button>
+                                    <button onClick={() => { setModalType('changePassword'); setFormData({ newTeacherPwd: passwords.teacher, newCouncilPwd: passwords.council }); }} className="text-sm hover:text-govGold transition hidden sm:block">⚙️ 비번설정</button>
                                 )}
                                 <button onClick={openLoginModal} className="text-sm hover:text-govGold transition font-bold">권한변경</button>
                             </div>
@@ -441,17 +409,9 @@
                                 { id: 'judicial', name: '사법부', icon: <IconGavel /> },
                                 { id: 'praise', name: '익명 칭찬', icon: <IconHeart /> },
                                 { id: 'poll', name: '여론조사', icon: <IconChart /> },
-                                { id: 'freeboard', name: '자유게시판', icon: <IconMessage /> } // 자유게시판 탭 추가
+                                { id: 'freeboard', name: '자유게시판', icon: <IconMessage /> }
                             ].map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex items-center py-4 px-2 border-b-4 font-bold text-base sm:text-lg transition-colors ${
-                                        activeTab === tab.id 
-                                        ? 'border-govBlue text-govBlue' 
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                                >
+                                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center py-4 px-2 border-b-4 font-bold text-base sm:text-lg transition-colors ${activeTab === tab.id ? 'border-govBlue text-govBlue' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                                     {tab.icon} {tab.name}
                                 </button>
                             ))}
@@ -466,7 +426,7 @@
                             </div>
                         ) : (
                             <>
-                                {/* 1. 행정부 */}
+                                {}
                                 {activeTab === 'executive' && (
                                     <div className="space-y-6 animate-fade-in-up">
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -482,9 +442,7 @@
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                                             <div className="flex justify-between items-center mb-4">
                                                 <h2 className="text-xl font-bold text-govBlue">📬 실시간 학급 신문고</h2>
-                                                <button onClick={() => { setModalType('addComplaint'); setFormData({ text: '' }); }} className="text-sm bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow transition-colors">
-                                                    + 의견 등록하기
-                                                </button>
+                                                <button onClick={() => { setModalType('addComplaint'); setFormData({ text: '' }); }} className="text-sm bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow transition-colors">+ 의견 등록하기</button>
                                             </div>
                                             <div className="space-y-4">
                                                 {(executiveData.complaints || []).length === 0 ? (
@@ -492,25 +450,11 @@
                                                 ) : (
                                                     executiveData.complaints.map(comp => (
                                                         <div key={comp.id} className="p-4 border border-gray-100 bg-gray-50 rounded-lg relative">
-                                                            <div className="flex justify-between items-start mb-2" 
-                                                                 onClick={() => {
-                                                                     if (role === 'teacher' || role === 'council') {
-                                                                         setModalType('manageComplaint');
-                                                                         setFormData(comp);
-                                                                     }
-                                                                 }}
-                                                                 className={(role === 'teacher' || role === 'council') ? 'cursor-pointer' : ''}>
+                                                            <div className={`flex justify-between items-start mb-2 ${(role === 'teacher' || role === 'council') ? 'cursor-pointer' : ''}`} onClick={() => { if (role === 'teacher' || role === 'council') { setModalType('manageComplaint'); setFormData(comp); } }}>
                                                                 <p className="font-medium text-gray-800 pr-16">{comp.text}</p>
-                                                                <span className={`absolute top-4 right-4 text-xs px-2 py-1 rounded-full font-bold ${
-                                                                    comp.status === '대기' ? 'bg-yellow-100 text-yellow-800' : 
-                                                                    comp.status === '해결' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-800'
-                                                                }`}>{comp.status}</span>
+                                                                <span className={`absolute top-4 right-4 text-xs px-2 py-1 rounded-full font-bold ${comp.status === '대기' ? 'bg-yellow-100 text-yellow-800' : comp.status === '해결' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-800'}`}>{comp.status}</span>
                                                             </div>
-                                                            {comp.reply && (
-                                                                <div className="mt-3 pl-4 border-l-4 border-govBlue text-sm text-gray-600">
-                                                                    <span className="font-bold text-govBlue mr-2">행정부 답변:</span>{comp.reply}
-                                                                </div>
-                                                            )}
+                                                            {comp.reply && <div className="mt-3 pl-4 border-l-4 border-govBlue text-sm text-gray-600"><span className="font-bold text-govBlue mr-2">행정부 답변:</span>{comp.reply}</div>}
                                                             {role === 'teacher' && (
                                                                 <div className="mt-3 text-right">
                                                                     <button onClick={(e) => { e.stopPropagation(); setModalType('deleteComplaint'); setFormData({ id: comp.id }); }} className="text-xs text-red-500 hover:text-red-700 font-bold border border-red-200 px-2 py-1 rounded bg-white transition-colors">삭제하기</button>
@@ -524,84 +468,169 @@
                                     </div>
                                 )}
 
-                                {/* 2. 입법부 */}
+                                {}
                                 {activeTab === 'legislative' && (
                                     <div className="space-y-8 animate-fade-in-up">
-                                        <div className="flex justify-between items-center">
-                                            <h2 className="text-2xl font-bold text-govBlue">📜 입법부 법안 시스템</h2>
-                                            {(role === 'teacher' || role === 'council') && (
-                                                <button onClick={() => { setModalType('addBill'); setFormData({ title: '', proposer: '', sponsors: '', content: '' }); }} className="bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow">
-                                                    + 새 법안 상정
-                                                </button>
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 gap-4">
+                                            <div className="flex space-x-2 sm:space-x-4 overflow-x-auto w-full md:w-auto pb-2 sm:pb-0 scrollbar-hide">
+                                                <button onClick={() => setLegisSubTab('bills')} className={`text-base sm:text-lg font-bold px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${legisSubTab === 'bills' ? 'bg-govBlue text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>📜 입법 현황</button>
+                                                <button onClick={() => setLegisSubTab('laws')} className={`text-base sm:text-lg font-bold px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${legisSubTab === 'laws' ? 'bg-govBlue text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>📖 현행 법률집</button>
+                                            </div>
+                                            {legisSubTab === 'bills' && (role === 'teacher' || role === 'council') && (
+                                                <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                                                    <button onClick={() => { setModalType('addBill'); setFormData({ title: '', proposer: '', sponsors: '', content: '' }); }} className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-900 font-bold shadow w-full sm:w-auto text-sm transition-colors">
+                                                        + 새 법안 상정
+                                                    </button>
+                                                    <button onClick={() => { 
+                                                        const firstLaw = globalLaws[0];
+                                                        const firstArt = firstLaw?.articles[0];
+                                                        const firstClause = firstArt?.clauses[0];
+                                                        setModalType('addAmendmentBill'); 
+                                                        setFormData({ 
+                                                            title: '', proposer: '', sponsors: '', amendmentContent: '',
+                                                            targetLawId: firstLaw?.id || '', targetArticleNum: firstArt?.articleNum || '', targetClauseNum: firstClause?.clauseNum || ''
+                                                        }); 
+                                                    }} className="bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow w-full sm:w-auto text-sm transition-colors">
+                                                        + 기존 법률 개정안 상정
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                         
-                                        {/* 공포된 법안 (가결) */}
-                                        <div className="bg-green-50/50 p-6 rounded-xl border border-green-100">
-                                            <h3 className="text-xl font-bold text-green-800 mb-4 flex items-center">
-                                                <span className="text-2xl mr-2">✅</span> 공포된 법안 (가결)
-                                            </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {bills.filter(b => b.status === '가결').length === 0 ? (
-                                                    <p className="text-gray-500 italic col-span-full">아직 가결된 법안이 없습니다.</p>
-                                                ) : (
-                                                    bills.filter(b => b.status === '가결').map(bill => (
-                                                        <div key={bill.id} className="bg-white p-6 rounded-xl shadow-sm border border-green-200 flex flex-col h-full overflow-hidden relative">
-                                                            <div className="absolute top-0 right-0 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">가결</div>
-                                                            <div className="flex justify-between items-start mb-3 mt-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>
-                                                                <span className="text-xs text-gray-400">{bill.date}</span>
-                                                            </div>
-                                                            <h3 className="text-lg font-bold text-gray-900 mb-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.title}</h3>
-                                                            <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.content}</p>
-                                                            <div className="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
-                                                                <p className="text-xs text-gray-500"><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* 심사 중 및 부결 법안 섹션 */}
-                                        <div>
-                                            <h3 className="text-xl font-bold text-gray-700 mb-4 flex items-center">
-                                                <span className="text-2xl mr-2">⏳</span> 심사 중 및 부결 법안
-                                            </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {bills.filter(b => b.status !== '가결').map(bill => (
-                                                    <div key={bill.id} onClick={() => { setModalType('viewBill'); setFormData(bill); }} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full cursor-pointer hover:shadow-md transition-shadow relative">
-                                                        <div className="flex justify-between items-start mb-3">
-                                                            <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-                                                                bill.status === '계류' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800'
-                                                            }`}>{bill.status}</span>
-                                                            <span className="text-xs text-gray-400">{bill.date}</span>
-                                                        </div>
-                                                        <h3 className="text-lg font-bold text-gray-900 mb-2">{bill.title}</h3>
-                                                        <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-3">{bill.content}</p>
-                                                        <div className="mt-auto pt-4 border-t border-gray-100 text-xs text-gray-500">
-                                                            <p><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
-                                                            <p><span className="font-semibold text-gray-700">공동발의:</span> {bill.sponsors?.split(', ').map(s => maskName(s)).join(', ')}</p>
-                                                        </div>
-                                                        {(role === 'teacher' || role === 'council') && bill.status === '계류' && (
-                                                            <div className="flex gap-2 mt-4 pt-2">
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '가결' }); }} className="flex-1 bg-green-50 text-green-700 py-1 rounded border border-green-200 hover:bg-green-100 text-sm font-bold">가결</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '부결' }); }} className="flex-1 bg-red-50 text-red-700 py-1 rounded border border-red-200 hover:bg-red-100 text-sm font-bold">부결</button>
-                                                            </div>
+                                        {/* 기존 입법 현황 (bills) */}
+                                        {legisSubTab === 'bills' && (
+                                            <>
+                                                {/* 공포된 법안 (가결) */}
+                                                <div className="bg-green-50/50 p-6 rounded-xl border border-green-100">
+                                                    <h3 className="text-xl font-bold text-green-800 mb-4 flex items-center">
+                                                        <span className="text-2xl mr-2">✅</span> 공포된 법안 (가결)
+                                                    </h3>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        {bills.filter(b => b.status === '가결').length === 0 ? (
+                                                            <p className="text-gray-500 italic col-span-full">아직 가결된 법안이 없습니다.</p>
+                                                        ) : (
+                                                            bills.filter(b => b.status === '가결').map(bill => (
+                                                                <div key={bill.id} className="bg-white p-6 rounded-xl shadow-sm border border-green-200 flex flex-col h-full overflow-hidden relative">
+                                                                    <div className="absolute top-0 right-0 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">가결</div>
+                                                                    <div className="flex justify-between items-start mb-3 mt-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>
+                                                                        <span className="text-xs text-gray-400">{bill.date}</span>
+                                                                    </div>
+                                                                    <h3 className="text-lg font-bold text-gray-900 mb-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.title}</h3>
+                                                                    <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.content}</p>
+                                                                    <div className="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
+                                                                        <p className="text-xs text-gray-500"><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
+                                                                    </div>
+                                                                </div>
+                                                            ))
                                                         )}
                                                     </div>
-                                                ))}
+                                                </div>
+
+                                                {/* 심사 중 및 부결 법안 섹션 */}
+                                                <div>
+                                                    <h3 className="text-xl font-bold text-gray-700 mb-4 flex items-center">
+                                                        <span className="text-2xl mr-2">⏳</span> 심사 중 및 부결 법안
+                                                    </h3>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        {bills.filter(b => b.status !== '가결').map(bill => (
+                                                            <div key={bill.id} onClick={() => { setModalType('viewBill'); setFormData(bill); }} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full cursor-pointer hover:shadow-md transition-shadow relative">
+                                                                <div className="flex justify-between items-start mb-3">
+                                                                    <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                                                                        bill.status === '계류' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800'
+                                                                    }`}>{bill.status}</span>
+                                                                    <span className="text-xs text-gray-400">{bill.date}</span>
+                                                                </div>
+                                                                <h3 className="text-lg font-bold text-gray-900 mb-2">{bill.title}</h3>
+                                                                <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-3">{bill.content}</p>
+                                                                <div className="mt-auto pt-4 border-t border-gray-100 text-xs text-gray-500">
+                                                                    <p><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
+                                                                    <p><span className="font-semibold text-gray-700">공동발의:</span> {bill.sponsors?.split(', ').map(s => maskName(s)).join(', ')}</p>
+                                                                </div>
+                                                                {(role === 'teacher' || role === 'council') && bill.status === '계류' && (
+                                                                    <div className="flex gap-2 mt-4 pt-2">
+                                                                        <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '가결' }); }} className="flex-1 bg-green-50 text-green-700 py-1 rounded border border-green-200 hover:bg-green-100 text-sm font-bold">가결</button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '부결' }); }} className="flex-1 bg-red-50 text-red-700 py-1 rounded border border-red-200 hover:bg-red-100 text-sm font-bold">부결</button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {/* 현행 법률집 (전역 저장) */}
+                                        {legisSubTab === 'laws' && (
+                                            <div className="flex flex-col md:flex-row gap-6">
+                                                <div className="md:w-1/3 lg:w-1/4 flex flex-col space-y-3">
+                                                    {role === 'teacher' && (
+                                                        <button onClick={() => { setModalType('addLaw'); setFormData({ title: '', articles: [{ title: '', clauses: [{ clauseNum: 1, text: '' }] }] }); }} className="bg-indigo-600 text-white font-bold px-4 py-3 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center justify-center w-full">
+                                                            + 새 법률 제정
+                                                        </button>
+                                                    )}
+                                                    {globalLaws.map(law => (
+                                                        <button key={law.id} onClick={() => setSelectedLawId(law.id)} className={`text-left px-5 py-4 rounded-xl font-bold transition-all shadow-sm flex justify-between items-center ${selectedLawId === law.id ? 'bg-indigo-50 border-l-4 border-indigo-600 text-indigo-800' : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50'}`}>
+                                                            <span className="truncate">{law.title}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                
+                                                <div className="md:w-2/3 lg:w-3/4 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-200 min-h-[500px] relative">
+                                                    {(() => {
+                                                        const currentLaw = globalLaws.find(l => l.id === selectedLawId) || globalLaws[0];
+                                                        if (!currentLaw) return <div className="text-center text-gray-400 py-10">등록된 법률이 없습니다.</div>;
+                                                        return (
+                                                            <div className="animate-fade-in-up">
+                                                                {role === 'teacher' && (
+                                                                    <div className="absolute top-6 right-6 flex space-x-2">
+                                                                        <button onClick={() => {
+                                                                            const editableArticles = currentLaw.articles.map(art => ({ ...art, clauses: (art.clauses || []).map((c, i) => typeof c === 'string' ? { clauseNum: i + 1, text: c } : c) }));
+                                                                            setModalType('editLaw'); setFormData({ ...currentLaw, articles: editableArticles });
+                                                                        }} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-200 border border-gray-200 flex items-center">
+                                                                            <IconEdit /> 수정
+                                                                        </button>
+                                                                        <button onClick={() => { setModalType('deleteLaw'); setFormData({ id: currentLaw.id }); }} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-red-100 border border-red-100">
+                                                                            삭제
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                                <h3 className="text-3xl font-black text-gray-900 mb-8 pb-4 border-b-2 border-gray-100 text-center pr-20">{currentLaw.title}</h3>
+                                                                <div className="space-y-8">
+                                                                    {currentLaw.articles.map(article => (
+                                                                        <div key={article.articleNum} className="relative">
+                                                                            <h4 className="text-xl font-bold text-govBlue mb-4 flex items-center">
+                                                                                <span className="bg-govBlue text-white px-2 py-1 rounded text-sm mr-3 shadow-sm">제{article.articleNum}조</span>
+                                                                                {article.title}
+                                                                            </h4>
+                                                                            <div className="space-y-3 pl-2 sm:pl-4 bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-inner">
+                                                                                {article.clauses.map((clause, idx) => {
+                                                                                    const clauseText = typeof clause === 'string' ? clause : clause.text;
+                                                                                    const clauseNum = typeof clause === 'string' ? idx + 1 : clause.clauseNum;
+                                                                                    return (
+                                                                                        <p key={idx} className="text-gray-800 leading-relaxed flex items-start text-base sm:text-lg font-medium">
+                                                                                            <span className="font-black text-indigo-500 mr-2 min-w-[24px] select-none">{getCircledNumber(clauseNum)}</span> 
+                                                                                            <span>{clauseText}</span>
+                                                                                        </p>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
                                 )}
 
-                                {/* 3. 사법부 */}
+                                {}
                                 {activeTab === 'judicial' && (
                                     <div className="space-y-6 animate-fade-in-up">
                                         <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                                            <div>
-                                                <h2 className="text-2xl font-bold text-govBlue">⚖️ 사법부 학급 코인 관리</h2>
-                                            </div>
+                                            <div><h2 className="text-2xl font-bold text-govBlue">⚖️ 사법부 학급 코인 관리</h2></div>
                                             <div className="flex items-center space-x-3">
                                                 <label className="flex items-center cursor-pointer hidden sm:flex">
                                                     <div className="relative">
@@ -612,9 +641,7 @@
                                                     <div className="ml-3 text-sm font-medium text-gray-700">이름 마스킹</div>
                                                 </label>
                                                 {(role === 'teacher') && (
-                                                    <button onClick={() => { setModalType('addStudent'); setFormData({ name: '', coins: 0 }); }} className="bg-gray-800 text-white px-3 py-2 rounded shadow text-sm hover:bg-gray-900 font-bold">
-                                                        + 학생 추가
-                                                    </button>
+                                                    <button onClick={() => { setModalType('addStudent'); setFormData({ name: '', coins: 0 }); }} className="bg-gray-800 text-white px-3 py-2 rounded shadow text-sm hover:bg-gray-900 font-bold">+ 학생 추가</button>
                                                 )}
                                             </div>
                                         </div>
@@ -625,9 +652,7 @@
                                                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">번호</th>
                                                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">이름</th>
                                                         <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">코인 현황</th>
-                                                        {(role === 'teacher' || role === 'council') && (
-                                                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">관리</th>
-                                                        )}
+                                                        {(role === 'teacher' || role === 'council') && <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">관리</th>}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -652,15 +677,13 @@
                                     </div>
                                 )}
 
-                                {/* 4. 익명 칭찬 게시판 */}
+                                {}
                                 {activeTab === 'praise' && (
                                     <div className="space-y-6 animate-fade-in-up">
                                         <div className="bg-gradient-to-r from-pink-50 to-red-50 p-6 rounded-xl shadow-sm border border-pink-100">
                                             <div className="flex justify-between items-center mb-4">
                                                 <h2 className="text-2xl font-black text-pink-600">💖 익명 칭찬 게시판</h2>
-                                                <button onClick={() => { setModalType('addPraise'); setFormData({ targetName: '', proposerName: '', reason: '', detail: '' }); }} className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 font-bold shadow-md transition-colors">
-                                                    + 칭찬 글쓰기
-                                                </button>
+                                                <button onClick={() => { setModalType('addPraise'); setFormData({ targetName: '', proposerName: '', reason: '', detail: '' }); }} className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 font-bold shadow-md transition-colors">+ 칭찬 글쓰기</button>
                                             </div>
                                             <p className="text-pink-800 text-sm font-medium">우리 반 친구들의 선행을 제보하세요. 상세 내용을 성의 있게 적어주세요!</p>
                                         </div>
@@ -669,9 +692,7 @@
                                                 <div key={praise.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative group">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <h3 className="font-bold text-lg text-gray-900">받는 사람: <span className="text-govBlue">{praise.targetName}</span></h3>
-                                                        <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-                                                            praise.status === '보상완료' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'
-                                                        }`}>{praise.status}</span>
+                                                        <span className={`text-xs px-2 py-1 rounded-full font-bold ${praise.status === '보상완료' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'}`}>{praise.status}</span>
                                                     </div>
                                                     <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                                                         <p className="text-sm font-bold text-gray-500 mb-1">칭찬 이유</p>
@@ -682,9 +703,7 @@
                                                         <div className="flex space-x-2">
                                                             {role === 'teacher' && (
                                                                 <>
-                                                                    <button onClick={() => { setModalType('viewPraiseDetail'); setFormData(praise); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded font-bold border border-indigo-200 flex items-center">
-                                                                        <IconEye /> 상세 보기
-                                                                    </button>
+                                                                    <button onClick={() => { setModalType('viewPraiseDetail'); setFormData(praise); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded font-bold border border-indigo-200 flex items-center"><IconEye /> 상세 보기</button>
                                                                     <button onClick={() => { setModalType('deletePraise'); setFormData({ id: praise.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
                                                                     {praise.status !== '보상완료' && (
                                                                         <button onClick={() => { setModalType('rewardPraise'); setFormData({ id: praise.id, targetName: praise.targetName, rewardStudentId: '', rewardAmount: '' }); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-bold border border-indigo-200">보상지급</button>
@@ -695,14 +714,11 @@
                                                     </div>
                                                 </div>
                                             ))}
-                                            {praises.length === 0 && (
-                                                <div className="col-span-full text-center py-10 text-gray-400 italic">아직 등록된 칭찬글이 없습니다.</div>
-                                            )}
+                                            {praises.length === 0 && <div className="col-span-full text-center py-10 text-gray-400 italic">아직 등록된 칭찬글이 없습니다.</div>}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 5. 여론조사 게시판 */}
                                 {activeTab === 'poll' && (
                                     <div className="space-y-6 animate-fade-in-up">
                                         <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -711,12 +727,9 @@
                                                 <p className="text-sm text-gray-500 mt-1">우리 반의 중요한 결정, 다수결로 공정하게 정해요!</p>
                                             </div>
                                             {(role === 'teacher' || role === 'council') && (
-                                                <button onClick={() => { setModalType('addPoll'); setFormData({ title: '', options: ['', '', ''] }); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-md transition-colors">
-                                                    + 설문 만들기
-                                                </button>
+                                                <button onClick={() => { setModalType('addPoll'); setFormData({ title: '', options: ['', '', ''] }); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-md transition-colors">+ 설문 만들기</button>
                                             )}
                                         </div>
-                                        
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             {polls.map(poll => {
                                                 const totalVotes = poll.options.reduce((sum, opt) => sum + (opt.voters || []).length, 0);
@@ -746,15 +759,9 @@
                                                         <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
                                                             <div className="flex gap-2">
                                                                 <span className="text-sm font-bold text-indigo-600">총 {totalVotes}명 참여</span>
-                                                                {role === 'teacher' && (
-                                                                    <button onClick={(e) => { e.stopPropagation(); setModalType('viewPollStatus'); setFormData(poll); }} className="text-xs flex items-center bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-bold text-gray-600 transition-colors border border-gray-200">
-                                                                        <IconEye /> 투표 현황
-                                                                    </button>
-                                                                )}
+                                                                {role === 'teacher' && <button onClick={(e) => { e.stopPropagation(); setModalType('viewPollStatus'); setFormData(poll); }} className="text-xs flex items-center bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-bold text-gray-600 transition-colors border border-gray-200"><IconEye /> 투표 현황</button>}
                                                             </div>
-                                                            {(role === 'teacher' || role === 'council') && (
-                                                                <button onClick={(e) => { e.stopPropagation(); setModalType('deletePoll'); setFormData({ pollId: poll.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>
-                                                            )}
+                                                            {(role === 'teacher' || role === 'council') && <button onClick={(e) => { e.stopPropagation(); setModalType('deletePoll'); setFormData({ pollId: poll.id }); }} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-bold border border-red-200">삭제</button>}
                                                         </div>
                                                     </div>
                                                 );
@@ -763,7 +770,6 @@
                                     </div>
                                 )}
 
-                                {/* 6. 자유게시판 */}
                                 {activeTab === 'freeboard' && (
                                     <div className="space-y-6 animate-fade-in-up">
                                         <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -771,66 +777,41 @@
                                                 <h2 className="text-2xl font-black text-govBlue">💬 자유게시판</h2>
                                                 <p className="text-sm text-gray-500 mt-1">자유롭게 생각을 나누고 소통해요!</p>
                                             </div>
-                                            <button onClick={() => { setModalType('addFreePost'); setFormData({ title: '', content: '', authorName: '' }); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 font-bold shadow-md transition-colors">
-                                                + 글쓰기
-                                            </button>
+                                            <button onClick={() => { setModalType('addFreePost'); setFormData({ title: '', content: '', authorName: '' }); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 font-bold shadow-md transition-colors">+ 글쓰기</button>
                                         </div>
-
                                         <div className="space-y-4">
                                             {(() => {
-                                                const sortedPosts = [...freePosts].sort((a, b) => b.id - a.id); // 기본 최신순
-                                                let bestPost = null;
-                                                let otherPosts = sortedPosts;
-
+                                                const sortedPosts = [...freePosts].sort((a, b) => b.id - a.id); 
+                                                let bestPost = null; let otherPosts = sortedPosts;
                                                 if (sortedPosts.length > 0) {
                                                     const maxLikes = Math.max(...sortedPosts.map(p => p.likes || 0));
-                                                    if (maxLikes > 0) {
-                                                        // 가장 공감이 많은 글 찾기 (동률일 경우 최신글 우선)
-                                                        bestPost = sortedPosts.find(p => (p.likes || 0) === maxLikes);
-                                                        otherPosts = sortedPosts.filter(p => p.id !== bestPost.id);
-                                                    }
+                                                    if (maxLikes > 0) { bestPost = sortedPosts.find(p => (p.likes || 0) === maxLikes); otherPosts = sortedPosts.filter(p => p.id !== bestPost.id); }
                                                 }
-
                                                 return (
                                                     <>
                                                         {bestPost && (
                                                             <div onClick={() => { setModalType('viewFreePost'); setFormData({...bestPost, newCommentText: '', newCommentAuthor: ''}); }} className="bg-yellow-50 p-5 rounded-xl shadow border-2 border-yellow-300 cursor-pointer hover:shadow-md transition-all relative">
                                                                 <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-black px-3 py-1 rounded-bl-lg">👑 베스트 공감</div>
-                                                                <div className="flex justify-between items-start mb-2 mt-2">
-                                                                    <h3 className="text-lg font-bold text-gray-900">{bestPost.title}</h3>
-                                                                    <span className="text-xs text-gray-500">{bestPost.date}</span>
-                                                                </div>
+                                                                <div className="flex justify-between items-start mb-2 mt-2"><h3 className="text-lg font-bold text-gray-900">{bestPost.title}</h3><span className="text-xs text-gray-500">{bestPost.date}</span></div>
                                                                 <p className="text-sm text-gray-600 line-clamp-2 mb-3">{bestPost.content}</p>
                                                                 <div className="flex justify-between items-center text-xs text-gray-500 border-t border-yellow-200 pt-3">
                                                                     <span>작성자: {maskName(bestPost.authorName)}</span>
-                                                                    <div className="flex space-x-3">
-                                                                        <span className="font-bold text-red-500">❤️ {bestPost.likes || 0}</span>
-                                                                        <span className="font-bold text-blue-500">💬 {(bestPost.comments || []).length}</span>
-                                                                    </div>
+                                                                    <div className="flex space-x-3"><span className="font-bold text-red-500">❤️ {bestPost.likes || 0}</span><span className="font-bold text-blue-500">💬 {(bestPost.comments || []).length}</span></div>
                                                                 </div>
                                                             </div>
                                                         )}
-                                                        
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                             {otherPosts.map(post => (
                                                                 <div key={post.id} onClick={() => { setModalType('viewFreePost'); setFormData({...post, newCommentText: '', newCommentAuthor: ''}); }} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all flex flex-col">
-                                                                    <div className="flex justify-between items-start mb-2">
-                                                                        <h3 className="text-md font-bold text-gray-900 line-clamp-1">{post.title}</h3>
-                                                                        <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{post.date}</span>
-                                                                    </div>
+                                                                    <div className="flex justify-between items-start mb-2"><h3 className="text-md font-bold text-gray-900 line-clamp-1">{post.title}</h3><span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{post.date}</span></div>
                                                                     <p className="text-sm text-gray-600 line-clamp-2 mb-4 flex-grow">{post.content}</p>
                                                                     <div className="flex justify-between items-center text-xs text-gray-500 border-t border-gray-100 pt-3 mt-auto">
                                                                         <span>{maskName(post.authorName)}</span>
-                                                                        <div className="flex space-x-3">
-                                                                            <span className="text-red-400 font-medium">❤️ {post.likes || 0}</span>
-                                                                            <span className="text-blue-400 font-medium">💬 {(post.comments || []).length}</span>
-                                                                        </div>
+                                                                        <div className="flex space-x-3"><span className="text-red-400 font-medium">❤️ {post.likes || 0}</span><span className="text-blue-400 font-medium">💬 {(post.comments || []).length}</span></div>
                                                                     </div>
                                                                 </div>
                                                             ))}
-                                                            {freePosts.length === 0 && (
-                                                                <div className="col-span-full text-center py-10 text-gray-400 italic">첫 번째 글의 주인공이 되어보세요!</div>
-                                                            )}
+                                                            {freePosts.length === 0 && <div className="col-span-full text-center py-10 text-gray-400 italic">첫 번째 글의 주인공이 되어보세요!</div>}
                                                         </div>
                                                     </>
                                                 );
@@ -838,22 +819,24 @@
                                         </div>
                                     </div>
                                 )}
-
                             </>
                         )}
                     </main>
 
-                    {/* 통합 액션 모달 */}
+                    {}
                     {modalType && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
                             <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
                                 <h3 className="text-xl font-bold text-govBlue mb-4 border-b pb-2 flex items-center">
+                                    {modalType === 'addLaw' && '📖 새 현행 법률 제정'}
+                                    {modalType === 'editLaw' && '📖 현행 법률 수정'}
+                                    {modalType === 'deleteLaw' && '🗑️ 법률 삭제 확인'}
                                     {modalType === 'addBill' && '📜 새 법안 상정'}
+                                    {modalType === 'addAmendmentBill' && '📜 기존 법률 개정안 상정'}
                                     {modalType === 'editBill' && '📜 법안 내용 수정'}
                                     {modalType === 'viewBill' && '📜 법안 상세 보기'}
                                     {modalType === 'confirmBill' && '⚖️ 법안 처리'}
                                     {modalType === 'deleteBill' && '🗑️ 법안 삭제'}
-                                    
                                     {modalType === 'viewPoll' && '🗳️ 투표하기 (번호 전용 비번 필요)'}
                                     {modalType === 'viewPollStatus' && '📊 실시간 투표 현황'}
                                     {modalType === 'addPoll' && '📊 새 여론조사 만들기'}
@@ -868,93 +851,147 @@
                                     {modalType === 'adjustCoin' && '코인 지급/차감'}
                                     {modalType === 'deletePoll' && '삭제 확인'}
                                     {modalType === 'deletePraise' && '삭제 확인'}
-
-                                    {/* 자유게시판 모달 타이틀 */}
                                     {modalType === 'addFreePost' && '📝 자유게시판 글쓰기'}
                                     {modalType === 'viewFreePost' && '📖 자유게시판 글보기'}
                                     {modalType === 'deleteFreePost' && '게시글 삭제 확인'}
                                 </h3>
 
                                 <div className="space-y-4 mb-6">
-                                    {/* 자유게시판 모달 내용 */}
-                                    {modalType === 'addFreePost' && (
-                                        <>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">제목</label>
-                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="글 제목을 입력하세요" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">작성자 이름 (선택)</label>
-                                                <input type="text" name="authorName" value={formData.authorName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="익명으로 남기려면 비워두세요" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">내용</label>
-                                                <textarea name="content" value={formData.content || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="자유롭게 이야기를 남겨주세요."></textarea>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {modalType === 'viewFreePost' && (
+                                    
+                                    {(modalType === 'addLaw' || modalType === 'editLaw') && (
                                         <div className="space-y-4">
-                                            {/* Post Header */}
-                                            <div className="flex justify-between items-start">
-                                                <h4 className="text-xl font-bold text-gray-900 pr-4">{formData.title}</h4>
-                                                <span className="text-xs text-gray-400 whitespace-nowrap mt-1">{formData.date}</span>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">법률 이름</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-govBlue focus:outline-none" placeholder="예: 학급 생활법" />
                                             </div>
-                                            <p className="text-sm text-gray-600 font-bold border-b pb-2">작성자: {maskName(formData.authorName)}</p>
-
-                                            {/* Post Content */}
-                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 whitespace-pre-wrap min-h-[120px] text-sm md:text-base border border-gray-100">
-                                                {formData.content}
-                                            </div>
-
-                                            {/* Like Button & Admin Delete */}
-                                            <div className="flex justify-between items-center pt-2">
-                                                <button onClick={() => handleLikePost(formData.id)} className="flex items-center space-x-2 px-4 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-full font-bold text-sm transition-colors border border-red-100 shadow-sm">
-                                                    <span>❤️ 공감해요</span>
-                                                    <span className="bg-white px-2 py-0.5 rounded-full border border-red-200 text-xs">{formData.likes || 0}</span>
-                                                </button>
-                                                {(role === 'teacher' || role === 'council') && (
-                                                    <button onClick={() => { setModalType('deleteFreePost'); setFormData({ id: formData.id }); }} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded hover:bg-gray-200 font-bold">글 삭제</button>
-                                                )}
-                                            </div>
-
-                                            {/* Comments Section */}
-                                            <div className="mt-6 border-t pt-4">
-                                                <h5 className="font-bold text-gray-800 mb-3 text-sm">💬 댓글 ({(formData.comments || []).length})</h5>
-                                                
-                                                <div className="space-y-2 max-h-48 overflow-y-auto mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                                                    {(formData.comments || []).length === 0 ? (
-                                                        <p className="text-center text-sm text-gray-400 py-4">첫 댓글을 남겨보세요!</p>
-                                                    ) : (
-                                                        (formData.comments || []).map(comment => (
-                                                            <div key={comment.id} className="bg-white p-2.5 rounded shadow-sm border border-gray-100 text-sm flex justify-between items-start group">
-                                                                <div className="pr-2">
-                                                                    <span className="font-bold text-govBlue mr-2 text-xs">{maskName(comment.authorName)}</span>
-                                                                    <span className="text-gray-700 break-all">{comment.text}</span>
-                                                                </div>
-                                                                <div className="flex flex-col items-end space-y-1 min-w-[50px]">
-                                                                    <span className="text-[10px] text-gray-400">{comment.date}</span>
-                                                                    {(role === 'teacher' || role === 'council') && (
-                                                                        <button onClick={() => handleDeleteComment(formData.id, comment.id)} className="text-[10px] text-red-500 hover:text-red-700 font-bold bg-red-50 px-1 rounded hidden group-hover:block">삭제</button>
-                                                                    )}
-                                                                </div>
+                                            <div className="space-y-3 max-h-[40vh] overflow-y-auto p-2 border border-gray-200 rounded bg-gray-50 shadow-inner">
+                                                {(formData.articles || []).map((art, idx) => (
+                                                    <div key={idx} className="bg-white p-4 rounded shadow-sm border border-gray-200 relative">
+                                                        <button onClick={() => { const newArts = formData.articles.filter((_, i) => i !== idx); setFormData({...formData, articles: newArts}); }} className="absolute top-3 right-3 bg-red-50 text-red-500 px-2 py-1 rounded text-xs font-bold hover:bg-red-100 transition-colors">조(Article) 삭제</button>
+                                                        <h5 className="font-bold text-govBlue mb-3">제{idx + 1}조</h5>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-500 mb-1">조 제목</label>
+                                                            <input type="text" value={art.title || ''} onChange={(e) => { const newArts = [...formData.articles]; newArts[idx].title = e.target.value; setFormData({...formData, articles: newArts}); }} className="w-full border border-gray-300 p-2 rounded mb-3 text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" placeholder="예: 총강" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-500 mb-2">항 내용 (개별 등록)</label>
+                                                            <div className="space-y-2">
+                                                                {(art.clauses || []).map((clause, cIdx) => (
+                                                                    <div key={cIdx} className="flex items-start space-x-2">
+                                                                        <span className="font-black text-indigo-500 mt-2 select-none">{getCircledNumber(cIdx + 1)}</span>
+                                                                        <textarea value={clause.text || ''} onChange={(e) => { const newArts = [...formData.articles]; newArts[idx].clauses[cIdx].text = e.target.value; setFormData({...formData, articles: newArts}); }} className="flex-1 border border-gray-300 p-2 rounded text-sm h-12 focus:ring-2 focus:ring-indigo-300 focus:outline-none" placeholder={`${cIdx + 1}항 내용을 입력하세요`}></textarea>
+                                                                        <button onClick={() => { const newArts = [...formData.articles]; newArts[idx].clauses = newArts[idx].clauses.filter((_, i) => i !== cIdx); setFormData({...formData, articles: newArts}); }} className="bg-red-50 text-red-500 px-2 py-2 rounded text-xs font-bold hover:bg-red-100 mt-0.5">삭제</button>
+                                                                    </div>
+                                                                ))}
+                                                                <button onClick={() => { const newArts = [...formData.articles]; newArts[idx].clauses.push({ clauseNum: newArts[idx].clauses.length + 1, text: '' }); setFormData({...formData, articles: newArts}); }} className="w-full bg-gray-100 text-gray-600 font-bold py-2 rounded border border-gray-200 hover:bg-gray-200 transition-colors text-sm mt-2">+ 항(Clause) 추가</button>
                                                             </div>
-                                                        ))
-                                                    )}
-                                                </div>
-
-                                                {/* Add Comment Form */}
-                                                <div className="flex space-x-2 bg-white p-1">
-                                                    <input type="text" name="newCommentAuthor" value={formData.newCommentAuthor || ''} onChange={handleFormChange} placeholder="이름(선택)" className="w-20 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
-                                                    <input type="text" name="newCommentText" value={formData.newCommentText || ''} onChange={handleFormChange} onKeyDown={(e) => e.key === 'Enter' && handleAddCommentSubmit()} placeholder="댓글을 입력하세요..." className="flex-1 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
-                                                    <button onClick={handleAddCommentSubmit} className="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">등록</button>
-                                                </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button onClick={() => { setFormData({...formData, articles: [...(formData.articles || []), { title: '', clauses: [{ clauseNum: 1, text: '' }] }]}); }} className="w-full bg-indigo-50 text-indigo-700 font-bold py-3 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors border-dashed">+ 조(Article) 추가하기</button>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* 기존 모달 폼들 유지 */}
+                                    {/* 기존 법률 개정안 상정 폼 */}
+                                    {modalType === 'addAmendmentBill' && (() => {
+                                        const currentLaw = globalLaws.find(l => l.id === formData.targetLawId) || globalLaws[0];
+                                        const currentArticle = currentLaw?.articles.find(a => String(a.articleNum) === String(formData.targetArticleNum)) || currentLaw?.articles[0];
+                                        
+                                        // 선택된 조항 원문 및 번호를 안전하게 파싱
+                                        const initialTargetClauseNum = formData.targetClauseNum || (typeof currentArticle?.clauses?.[0] === 'string' ? 1 : currentArticle?.clauses?.[0]?.clauseNum) || 1;
+                                        
+                                        const currentClause = currentArticle?.clauses?.find((c, idx) => {
+                                            const cNum = typeof c === 'string' ? idx + 1 : c.clauseNum;
+                                            return String(cNum) === String(initialTargetClauseNum);
+                                        }) || currentArticle?.clauses?.[0];
+
+                                        const currentClauseText = typeof currentClause === 'string' ? currentClause : currentClause?.text;
+                                        const currentClauseNum = typeof currentClause === 'string' ? (currentArticle?.clauses?.indexOf(currentClause) + 1) : currentClause?.clauseNum;
+                                        
+                                        return (
+                                        <>
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">개정안 제목</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="예: 학급 생활법 제2조 개정안" />
+                                            </div>
+                                            <div className="flex space-x-3 mb-4">
+                                                <div className="flex-1">
+                                                    <label className="block text-sm font-bold text-gray-700 mb-1">발의자</label>
+                                                    <input type="text" name="proposer" value={formData.proposer || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="발의자 이름" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="block text-sm font-bold text-gray-700 mb-1">공동발의</label>
+                                                    <input type="text" name="sponsors" value={formData.sponsors || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="공동발의자 이름" />
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 mb-4 space-y-3">
+                                                <label className="block text-sm font-black text-indigo-900">📌 개정 대상 법률 선택</label>
+                                                
+                                                <div>
+                                                    <label className="block text-xs font-bold text-indigo-700 mb-1">어떤 법을 고치나요?</label>
+                                                    <select 
+                                                        value={currentLaw?.id || ''} 
+                                                        onChange={(e) => {
+                                                            const newLaw = globalLaws.find(l => l.id === e.target.value);
+                                                            const newArt = newLaw?.articles[0];
+                                                            const newClause = newArt?.clauses[0];
+                                                            const newClauseNum = typeof newClause === 'string' ? 1 : newClause?.clauseNum;
+                                                            setFormData({...formData, targetLawId: newLaw?.id, targetArticleNum: newArt?.articleNum, targetClauseNum: newClauseNum});
+                                                        }} 
+                                                        className="w-full border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                    >
+                                                        {globalLaws.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                <div className="flex space-x-2">
+                                                    <div className="flex-1">
+                                                        <label className="block text-xs font-bold text-indigo-700 mb-1">몇 조?</label>
+                                                        <select 
+                                                            value={currentArticle?.articleNum || ''} 
+                                                            onChange={(e) => {
+                                                                const newArt = currentLaw?.articles.find(a => String(a.articleNum) === e.target.value);
+                                                                const newClause = newArt?.clauses[0];
+                                                                const newClauseNum = typeof newClause === 'string' ? 1 : newClause?.clauseNum;
+                                                                setFormData({...formData, targetArticleNum: newArt?.articleNum, targetClauseNum: newClauseNum});
+                                                            }} 
+                                                            className="w-full border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                        >
+                                                            {currentLaw?.articles.map(a => <option key={a.articleNum} value={a.articleNum}>제{a.articleNum}조 ({a.title})</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <label className="block text-xs font-bold text-indigo-700 mb-1">몇 항?</label>
+                                                        <select 
+                                                            value={currentClauseNum || ''} 
+                                                            onChange={(e) => setFormData({...formData, targetClauseNum: e.target.value})} 
+                                                            className="w-full border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                        >
+                                                            {currentArticle?.clauses?.map((c, idx) => {
+                                                                const cNum = typeof c === 'string' ? idx + 1 : c.clauseNum;
+                                                                return <option key={cNum} value={cNum}>{cNum}항</option>;
+                                                            })}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* 현재 선택된 조항의 원문 표시 영역 */}
+                                                <div className="mt-3 bg-white p-3 rounded border border-indigo-200 text-sm shadow-sm">
+                                                    <span className="font-bold text-indigo-800">📖 원문: </span>
+                                                    <span className="text-gray-700">{currentClauseText || '내용이 없습니다.'}</span>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">수정 및 제안 내용</label>
+                                                <textarea name="amendmentContent" value={formData.amendmentContent || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 h-32 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="해당 조항을 어떻게 수정하고 싶은지 제안 내용을 상세히 적어주세요..."></textarea>
+                                            </div>
+                                        </>
+                                        );
+                                    })()}
+
                                     {(modalType === 'addBill' || modalType === 'editBill') && (
                                         <>
                                             <div className="mb-4">
@@ -978,19 +1015,69 @@
                                         </>
                                     )}
 
+                                    {modalType === 'addFreePost' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">제목</label>
+                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="글 제목을 입력하세요" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">작성자 이름 (선택)</label>
+                                                <input type="text" name="authorName" value={formData.authorName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="익명으로 남기려면 비워두세요" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">내용</label>
+                                                <textarea name="content" value={formData.content || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="자유롭게 이야기를 남겨주세요."></textarea>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {modalType === 'viewFreePost' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-start"><h4 className="text-xl font-bold text-gray-900 pr-4">{formData.title}</h4><span className="text-xs text-gray-400 whitespace-nowrap mt-1">{formData.date}</span></div>
+                                            <p className="text-sm text-gray-600 font-bold border-b pb-2">작성자: {maskName(formData.authorName)}</p>
+                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 whitespace-pre-wrap min-h-[120px] text-sm md:text-base border border-gray-100">{formData.content}</div>
+                                            <div className="flex justify-between items-center pt-2">
+                                                <button onClick={() => handleLikePost(formData.id)} className="flex items-center space-x-2 px-4 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-full font-bold text-sm transition-colors border border-red-100 shadow-sm">
+                                                    <span>❤️ 공감해요</span><span className="bg-white px-2 py-0.5 rounded-full border border-red-200 text-xs">{formData.likes || 0}</span>
+                                                </button>
+                                                {(role === 'teacher' || role === 'council') && <button onClick={() => { setModalType('deleteFreePost'); setFormData({ id: formData.id }); }} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded hover:bg-gray-200 font-bold">글 삭제</button>}
+                                            </div>
+                                            <div className="mt-6 border-t pt-4">
+                                                <h5 className="font-bold text-gray-800 mb-3 text-sm">💬 댓글 ({(formData.comments || []).length})</h5>
+                                                <div className="space-y-2 max-h-48 overflow-y-auto mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                                                    {(formData.comments || []).length === 0 ? <p className="text-center text-sm text-gray-400 py-4">첫 댓글을 남겨보세요!</p> : (
+                                                        (formData.comments || []).map(comment => (
+                                                            <div key={comment.id} className="bg-white p-2.5 rounded shadow-sm border border-gray-100 text-sm flex justify-between items-start group">
+                                                                <div className="pr-2">
+                                                                    <span className="font-bold text-govBlue mr-2 text-xs">{maskName(comment.authorName)}</span>
+                                                                    <span className="text-gray-700 break-all">{comment.text}</span>
+                                                                </div>
+                                                                <div className="flex flex-col items-end space-y-1 min-w-[50px]">
+                                                                    <span className="text-[10px] text-gray-400">{comment.date}</span>
+                                                                    {(role === 'teacher' || role === 'council') && <button onClick={() => handleDeleteComment(formData.id, comment.id)} className="text-[10px] text-red-500 hover:text-red-700 font-bold bg-red-50 px-1 rounded hidden group-hover:block">삭제</button>}
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                                <div className="flex space-x-2 bg-white p-1">
+                                                    <input type="text" name="newCommentAuthor" value={formData.newCommentAuthor || ''} onChange={handleFormChange} placeholder="이름(선택)" className="w-20 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
+                                                    <input type="text" name="newCommentText" value={formData.newCommentText || ''} onChange={handleFormChange} onKeyDown={(e) => e.key === 'Enter' && handleAddCommentSubmit()} placeholder="댓글을 입력하세요..." className="flex-1 border border-gray-300 rounded p-2 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-gray-50" />
+                                                    <button onClick={handleAddCommentSubmit} className="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">등록</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {modalType === 'viewBill' && (
                                         <div className="space-y-4">
                                             <div className="flex justify-between items-center">
-                                                <span className={`text-sm px-3 py-1 rounded-full font-bold ${
-                                                    formData.status === '계류' ? 'bg-gray-100 text-gray-600' : 
-                                                    formData.status === '가결' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                }`}>{formData.status}</span>
+                                                <span className={`text-sm px-3 py-1 rounded-full font-bold ${formData.status === '계류' ? 'bg-gray-100 text-gray-600' : formData.status === '가결' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{formData.status}</span>
                                                 <span className="text-sm text-gray-500">{formData.date}</span>
                                             </div>
                                             <h4 className="text-2xl font-black text-gray-900 mt-2">{formData.title}</h4>
-                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[120px] text-base border border-gray-200">
-                                                {formData.content}
-                                            </div>
+                                            <div className="bg-gray-50 p-4 rounded-lg text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[120px] text-base border border-gray-200">{formData.content}</div>
                                             <div className="text-sm text-gray-600 border-t pt-4">
                                                 <p className="mb-1"><strong className="text-gray-800">발의자:</strong> {maskName(formData.proposer)}</p>
                                                 <p><strong className="text-gray-800">공동발의:</strong> {formData.sponsors?.split(', ').map(s => maskName(s)).join(', ')}</p>
@@ -1005,81 +1092,40 @@
                                     )}
 
                                     {modalType === 'confirmBill' && (
-                                        <p className="text-gray-700 text-lg">
-                                            <strong>[{formData.title}]</strong> 법안을 <span className={formData.status === '가결' ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{formData.status}</span> 처리하시겠습니까?
-                                        </p>
+                                        <p className="text-gray-700 text-lg"><strong>[{formData.title}]</strong> 법안을 <span className={formData.status === '가결' ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{formData.status}</span> 처리하시겠습니까?</p>
                                     )}
 
-                                    {modalType === 'addComplaint' && (
-                                        <textarea name="text" value={formData.text || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="학급에 건의할 사항을 상세히 적어주세요. 욕설이나 비방은 삭제될 수 있습니다."></textarea>
-                                    )}
-
+                                    {modalType === 'addComplaint' && <textarea name="text" value={formData.text || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="학급에 건의할 사항을 상세히 적어주세요. 욕설이나 비방은 삭제될 수 있습니다."></textarea>}
                                     {modalType === 'manageComplaint' && (
                                         <>
-                                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
-                                                <p className="text-xs text-gray-500 font-bold mb-1 uppercase">제보 내용</p>
-                                                <p className="text-sm text-gray-800 leading-relaxed font-medium">{formData.text}</p>
-                                            </div>
+                                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4"><p className="text-xs text-gray-500 font-bold mb-1 uppercase">제보 내용</p><p className="text-sm text-gray-800 leading-relaxed font-medium">{formData.text}</p></div>
                                             <div className="mb-4">
                                                 <label className="block text-sm font-bold text-gray-700 mb-1">처리 상태</label>
                                                 <select name="status" value={formData.status || '대기'} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-govBlue focus:outline-none">
-                                                    <option value="대기">⏳ 대기 중</option>
-                                                    <option value="해결">✅ 해결 완료</option>
-                                                    <option value="보류">⏸️ 처리 보류</option>
+                                                    <option value="대기">⏳ 대기 중</option><option value="해결">✅ 해결 완료</option><option value="보류">⏸️ 처리 보류</option>
                                                 </select>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">행정부 공식 답변</label>
-                                                <textarea name="reply" value={formData.reply || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:ring-2 focus:ring-govBlue focus:outline-none" placeholder="답변 내용을 입력하세요."></textarea>
-                                            </div>
+                                            <div><label className="block text-sm font-bold text-gray-700 mb-1">행정부 공식 답변</label><textarea name="reply" value={formData.reply || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:ring-2 focus:ring-govBlue focus:outline-none" placeholder="답변 내용을 입력하세요."></textarea></div>
                                         </>
                                     )}
-
                                     {modalType === 'addPraise' && (
                                         <>
-                                            <div className="bg-pink-50 p-4 rounded-lg border border-pink-100 mb-2">
-                                                <p className="text-xs text-pink-700 font-bold leading-relaxed">
-                                                    ⚠️ 경고: 상세 내용을 성의 있게 적지 않거나 허위 사실을 기재할 경우, 게시글이 불시에 삭제될 수 있습니다.
-                                                </p>
-                                            </div>
+                                            <div className="bg-pink-50 p-4 rounded-lg border border-pink-100 mb-2"><p className="text-xs text-pink-700 font-bold leading-relaxed">⚠️ 경고: 상세 내용을 성의 있게 적지 않거나 허위 사실을 기재할 경우, 게시글이 불시에 삭제될 수 있습니다.</p></div>
                                             <div className="grid grid-cols-2 gap-3">
-                                                <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">칭찬하는 사람 (나)</label>
-                                                    <input type="text" name="proposerName" value={formData.proposerName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="내 이름" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 받는 친구</label>
-                                                    <input type="text" name="targetName" value={formData.targetName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="친구 이름" />
-                                                </div>
+                                                <div><label className="block text-sm font-bold text-gray-700 mb-1">칭찬하는 사람 (나)</label><input type="text" name="proposerName" value={formData.proposerName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="내 이름" /></div>
+                                                <div><label className="block text-sm font-bold text-gray-700 mb-1">칭찬 받는 친구</label><input type="text" name="targetName" value={formData.targetName || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="친구 이름" /></div>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 이유 (간략하게)</label>
-                                                <input type="text" name="reason" value={formData.reason || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="예: 급식 당번을 도와줌" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">칭찬 상세 내용 (구체적으로)</label>
-                                                <textarea name="detail" value={formData.detail || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="언제, 어디서, 어떤 도움을 주었는지 자세히 적어주세요."></textarea>
-                                            </div>
+                                            <div><label className="block text-sm font-bold text-gray-700 mb-1">칭찬 이유 (간략하게)</label><input type="text" name="reason" value={formData.reason || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="예: 급식 당번을 도와줌" /></div>
+                                            <div><label className="block text-sm font-bold text-gray-700 mb-1">칭찬 상세 내용 (구체적으로)</label><textarea name="detail" value={formData.detail || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-32 focus:ring-2 focus:ring-pink-500 focus:outline-none" placeholder="언제, 어디서, 어떤 도움을 주었는지 자세히 적어주세요."></textarea></div>
                                         </>
                                     )}
-
                                     {modalType === 'viewPraiseDetail' && (
                                         <div className="space-y-4">
-                                            <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                                                <p className="text-sm font-bold text-indigo-800">작성자: {formData.proposerName}</p>
-                                                <p className="text-xs text-indigo-600">{formData.date}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-tight">받는 사람 / 이유</p>
-                                                <p className="text-lg font-black text-govBlue">{formData.targetName} / {formData.reason}</p>
-                                            </div>
-                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                                <p className="text-xs font-bold text-gray-400 mb-2 uppercase">상세 제보 내용</p>
-                                                <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{formData.detail}</p>
-                                            </div>
+                                            <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-lg border border-indigo-100"><p className="text-sm font-bold text-indigo-800">작성자: {formData.proposerName}</p><p className="text-xs text-indigo-600">{formData.date}</p></div>
+                                            <div><p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-tight">받는 사람 / 이유</p><p className="text-lg font-black text-govBlue">{formData.targetName} / {formData.reason}</p></div>
+                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200"><p className="text-xs font-bold text-gray-400 mb-2 uppercase">상세 제보 내용</p><p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{formData.detail}</p></div>
                                         </div>
                                     )}
-
                                     {modalType === 'viewPoll' && (
                                         <>
                                             <div className="mb-4">
@@ -1088,26 +1134,10 @@
                                                     <label className="block text-sm font-bold text-indigo-800 mb-2">내 번호 선택 (1번 ~ 18번)</label>
                                                     <select name="studentNum" value={formData.studentNum || ''} onChange={handleFormChange} className="w-full border border-indigo-300 rounded p-2 mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
                                                         <option value="">-- 내 번호를 선택하세요 --</option>
-                                                        {Array.from({ length: 18 }, (_, i) => i + 1).map(num => {
-                                                            const isVoted = Object.keys(formData.passwords || {}).includes(String(num));
-                                                            return (
-                                                                <option key={num} value={num}>
-                                                                    {num}번 {isVoted ? '(이미 투표함)' : ''}
-                                                                </option>
-                                                            );
-                                                        })}
+                                                        {Array.from({ length: 18 }, (_, i) => i + 1).map(num => <option key={num} value={num}>{num}번 {Object.keys(formData.passwords || {}).includes(String(num)) ? '(이미 투표함)' : ''}</option>)}
                                                     </select>
-                                                    <label className="block text-sm font-bold text-indigo-800 mb-2 flex items-center">
-                                                        <IconLock /> 투표 비밀번호 입력
-                                                    </label>
-                                                    <input 
-                                                        type="password" 
-                                                        name="studentPassword" 
-                                                        value={formData.studentPassword || ''} 
-                                                        onChange={handleFormChange} 
-                                                        className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${modalError ? 'border-red-500' : 'border-indigo-300'}`}
-                                                        placeholder="비밀번호를 입력하세요" 
-                                                    />
+                                                    <label className="block text-sm font-bold text-indigo-800 mb-2 flex items-center"><IconLock /> 투표 비밀번호 입력</label>
+                                                    <input type="password" name="studentPassword" value={formData.studentPassword || ''} onChange={handleFormChange} className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${modalError ? 'border-red-500' : 'border-indigo-300'}`} placeholder="비밀번호를 입력하세요" />
                                                     {modalError && <p className="text-red-600 text-xs mt-2 font-bold">❌ {modalError}</p>}
                                                 </div>
                                             </div>
@@ -1122,61 +1152,39 @@
                                             </div>
                                         </>
                                     )}
-
                                     {modalType === 'viewPollStatus' && (
                                         <div className="space-y-4">
                                             <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
                                                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                                                     <thead className="bg-gray-100">
-                                                        <tr>
-                                                            <th className="px-4 py-2 text-left font-bold text-gray-600">번호</th>
-                                                            <th className="px-4 py-2 text-left font-bold text-gray-600">선택 항목</th>
-                                                        </tr>
+                                                        <tr><th className="px-4 py-2 text-left font-bold text-gray-600">번호</th><th className="px-4 py-2 text-left font-bold text-gray-600">선택 항목</th></tr>
                                                     </thead>
                                                     <tbody className="bg-white divide-y divide-gray-100">
-                                                        {formData.options?.flatMap(opt => 
-                                                            (opt.voters || []).map(voterNum => ({ voterNum, text: opt.text }))
-                                                        ).sort((a, b) => a.voterNum - b.voterNum).map(item => (
-                                                            <tr key={item.voterNum} className="hover:bg-indigo-50/30">
-                                                                <td className="px-4 py-2 font-bold text-indigo-600">{item.voterNum}번</td>
-                                                                <td className="px-4 py-2 text-gray-700">{item.text}</td>
-                                                            </tr>
+                                                        {formData.options?.flatMap(opt => (opt.voters || []).map(voterNum => ({ voterNum, text: opt.text }))).sort((a, b) => a.voterNum - b.voterNum).map(item => (
+                                                            <tr key={item.voterNum} className="hover:bg-indigo-50/30"><td className="px-4 py-2 font-bold text-indigo-600">{item.voterNum}번</td><td className="px-4 py-2 text-gray-700">{item.text}</td></tr>
                                                         ))}
                                                         {(!formData.options || formData.options.every(o => !o.voters || o.voters.length === 0)) && (
-                                                            <tr>
-                                                                <td colSpan="2" className="px-4 py-8 text-center text-gray-400 italic">데이터가 없습니다.</td>
-                                                            </tr>
+                                                            <tr><td colSpan="2" className="px-4 py-8 text-center text-gray-400 italic">데이터가 없습니다.</td></tr>
                                                         )}
                                                     </tbody>
                                                 </table>
                                             </div>
                                         </div>
                                     )}
-
                                     {modalType === 'addPoll' && (
                                         <>
-                                            <div className="mb-4">
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">설문 주제</label>
-                                                <input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="설문 제목" />
-                                            </div>
+                                            <div className="mb-4"><label className="block text-sm font-bold text-gray-700 mb-1">설문 주제</label><input type="text" name="title" value={formData.title || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="설문 제목" /></div>
                                             <div>
                                                 <label className="block text-sm font-bold text-gray-700 mb-2">선택지 항목</label>
                                                 {formData.options?.map((opt, idx) => (
-                                                    <input key={idx} type="text" value={opt} onChange={(e) => {
-                                                        const newOpts = [...formData.options];
-                                                        newOpts[idx] = e.target.value;
-                                                        setFormData({ ...formData, options: newOpts });
-                                                    }} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder={`선택지 ${idx+1}`} />
+                                                    <input key={idx} type="text" value={opt} onChange={(e) => { const newOpts = [...formData.options]; newOpts[idx] = e.target.value; setFormData({ ...formData, options: newOpts }); }} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder={`선택지 ${idx+1}`} />
                                                 ))}
                                                 <button onClick={() => setFormData({...formData, options: [...formData.options, '']})} className="text-xs font-bold text-indigo-600">+ 항목 추가</button>
                                             </div>
                                         </>
                                     )}
-
                                     {modalType.includes('delete') && <p className="text-gray-700">정말로 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.</p>}
-                                    {modalType === 'editReport' && (
-                                        <textarea name="report" value={formData.report || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="보고서 내용"></textarea>
-                                    )}
+                                    {modalType === 'editReport' && <textarea name="report" value={formData.report || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-3 h-40 focus:outline-none focus:ring-2 focus:ring-govBlue" placeholder="보고서 내용"></textarea>}
                                     {modalType === 'addStudent' && (
                                         <>
                                             <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="이름" />
@@ -1185,9 +1193,7 @@
                                     )}
                                     {modalType === 'rewardPraise' && (
                                         <>
-                                            <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 mb-3">
-                                                <p className="text-sm font-bold text-indigo-800">지급 대상: {formData.targetName}</p>
-                                            </div>
+                                            <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 mb-3"><p className="text-sm font-bold text-indigo-800">지급 대상: {formData.targetName}</p></div>
                                             <div className="mb-4">
                                                 <label className="block text-sm font-bold text-gray-700 mb-1">명부에서 선택</label>
                                                 <select name="rewardStudentId" value={formData.rewardStudentId || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2">
@@ -1195,15 +1201,10 @@
                                                     {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.coins}C)</option>)}
                                                 </select>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-1">지급 코인</label>
-                                                <input type="number" name="rewardAmount" value={formData.rewardAmount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="지급 수량" />
-                                            </div>
+                                            <div><label className="block text-sm font-bold text-gray-700 mb-1">지급 코인</label><input type="number" name="rewardAmount" value={formData.rewardAmount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="지급 수량" /></div>
                                         </>
                                     )}
-                                    {modalType === 'adjustCoin' && (
-                                        <input type="number" name="amount" value={formData.amount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="수량 입력" />
-                                    )}
+                                    {modalType === 'adjustCoin' && <input type="number" name="amount" value={formData.amount || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="수량 입력" />}
                                     {modalType === 'changePassword' && (
                                         <>
                                             <input type="text" name="newTeacherPwd" value={formData.newTeacherPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="교사 비밀번호" />
@@ -1219,9 +1220,7 @@
                                         <>
                                             <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">취소</button>
                                             {modalType !== 'viewPraiseDetail' && modalType !== 'viewPollStatus' && (
-                                                <button onClick={submitActionModal} className={`px-4 py-2 text-sm text-white rounded font-bold ${
-                                                    modalType.includes('delete') ? 'bg-red-600 hover:bg-red-700' : 'bg-govBlue hover:bg-blue-900'
-                                                }`}>확인</button>
+                                                <button onClick={submitActionModal} className={`px-4 py-2 text-sm text-white rounded font-bold ${modalType.includes('delete') ? 'bg-red-600 hover:bg-red-700' : 'bg-govBlue hover:bg-blue-900'}`}>확인</button>
                                             )}
                                         </>
                                     )}
@@ -1230,7 +1229,7 @@
                         </div>
                     )}
 
-                    {/* 로그인 모달 */}
+                    {}
                     {showLoginModal && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
