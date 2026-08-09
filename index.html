@@ -87,6 +87,24 @@
             }
         ];
 
+        const PARTY_COLORS = [
+            { key: 'gray', label: '기본(흰색)', bg: 'bg-white', border: 'border-gray-100', swatch: 'bg-white' },
+            { key: 'red', label: '빨강', bg: 'bg-red-50', border: 'border-red-200', swatch: 'bg-red-400' },
+            { key: 'orange', label: '주황', bg: 'bg-orange-50', border: 'border-orange-200', swatch: 'bg-orange-400' },
+            { key: 'yellow', label: '노랑', bg: 'bg-yellow-50', border: 'border-yellow-200', swatch: 'bg-yellow-400' },
+            { key: 'green', label: '초록', bg: 'bg-green-50', border: 'border-green-200', swatch: 'bg-green-400' },
+            { key: 'blue', label: '파랑', bg: 'bg-blue-50', border: 'border-blue-200', swatch: 'bg-blue-400' },
+            { key: 'indigo', label: '남색', bg: 'bg-indigo-50', border: 'border-indigo-200', swatch: 'bg-indigo-400' },
+            { key: 'purple', label: '보라', bg: 'bg-purple-50', border: 'border-purple-200', swatch: 'bg-purple-400' },
+            { key: 'pink', label: '분홍', bg: 'bg-pink-50', border: 'border-pink-200', swatch: 'bg-pink-400' }
+        ];
+        const getPartyColor = (key) => PARTY_COLORS.find(c => c.key === key) || PARTY_COLORS[0];
+        const getOrderedMembers = (party, memberList) => [
+            ...memberList.filter(m => m.id === party.leaderId),
+            ...memberList.filter(m => m.id === party.coreMemberId && m.id !== party.leaderId),
+            ...memberList.filter(m => m.id !== party.leaderId && m.id !== party.coreMemberId)
+        ];
+
         const IconGov = () => <svg className="w-6 h-6 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>;
         const IconGavel = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>;
         const IconScroll = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>;
@@ -255,6 +273,17 @@
                 return name.charAt(0) + '*' + name.slice(2);
             };
 
+            const renderMemberBadge = (m, party) => {
+                const isLeader = m.id === party.leaderId;
+                const isCore = m.id === party.coreMemberId;
+                const badgeStyle = isLeader ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : isCore ? 'bg-purple-200 text-purple-800 border-purple-400' : 'bg-white text-gray-700 border-gray-300';
+                return (
+                    <span key={m.id} className={`text-xs font-bold px-2 py-1 rounded-full border ${badgeStyle}`}>
+                        {isLeader ? '👑 ' : isCore ? '⭐ ' : ''}{maskName(m.name)}
+                    </span>
+                );
+            };
+
             const getCircledNumber = (num) => {
                 const circles = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮'];
                 return circles[num - 1] || `${num}.`;
@@ -382,7 +411,7 @@
                         break;
                     case 'addParty':
                         if (!formData.name || !loggedInStudent) return;
-                        const newParty = { id: Date.now(), name: formData.name, leaderId: loggedInStudent.id, coreMemberId: null, memberIds: [loggedInStudent.id], pendingJoin: [], pendingLeave: [], password: '', subsidyBySession: {} };
+                        const newParty = { id: Date.now(), name: formData.name, color: formData.color || 'gray', leaderId: loggedInStudent.id, coreMemberId: null, memberIds: [loggedInStudent.id], pendingJoin: [], pendingLeave: [], password: '', subsidyBySession: {} };
                         updateParties(list => [...list, newParty]);
                         break;
                     case 'deleteParty': updateParties(list => list.filter(p => p.id !== formData.id)); break;
@@ -989,17 +1018,21 @@
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {parties.map(party => {
-                                                const leader = students.find(s => s.id === party.leaderId);
-                                                const core = students.find(s => s.id === party.coreMemberId);
+                                                const members = students.filter(s => (party.memberIds || []).includes(s.id));
+                                                const orderedMembers = getOrderedMembers(party, members);
                                                 const isLeaderOrCore = loggedInStudent && (party.leaderId === loggedInStudent.id || party.coreMemberId === loggedInStudent.id);
+                                                const partyColor = getPartyColor(party.color);
                                                 return (
-                                                    <div key={party.id} onClick={() => { setModalType('viewParty'); setFormData(party); }} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all">
+                                                    <div key={party.id} onClick={() => { setModalType('viewParty'); setFormData(party); }} className={`p-5 rounded-xl shadow-sm border cursor-pointer hover:shadow-md transition-all ${partyColor.bg} ${partyColor.border}`}>
                                                         <div className="flex justify-between items-start mb-2">
                                                             <h3 className="text-lg font-bold text-gray-900">{party.name}</h3>
                                                             {isLeaderOrCore && <span className="text-xs bg-govGold/20 text-govBlue px-2 py-1 rounded-full font-bold">내 정당</span>}
                                                         </div>
-                                                        <p className="text-sm text-gray-500">당대표: {leader ? maskName(leader.name) : '-'}{core && ` · 최고위원: ${maskName(core.name)}`}</p>
-                                                        <p className="text-sm text-gray-500 mt-1">당원 {(party.memberIds || []).length}명</p>
+                                                        <p className="text-xs text-gray-500 mb-2">당원 {members.length}명</p>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {orderedMembers.map(m => renderMemberBadge(m, party))}
+                                                            {orderedMembers.length === 0 && <span className="text-xs text-gray-400 italic">아직 당원이 없습니다.</span>}
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -1423,9 +1456,19 @@
                                         </>
                                     )}
                                     {modalType === 'addParty' && (
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-1">정당 이름</label>
-                                            <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="예: 학민당" />
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">정당 이름</label>
+                                                <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="예: 학민당" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2">정당 색상</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {PARTY_COLORS.map(c => (
+                                                        <button key={c.key} type="button" onClick={() => setFormData({ ...formData, color: c.key })} title={c.label} className={`w-8 h-8 rounded-full border-2 ${c.swatch} ${(formData.color || 'gray') === c.key ? 'ring-2 ring-offset-2 ring-govBlue' : 'border-gray-300'}`}></button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                     {modalType === 'setPartyPassword' && (
@@ -1443,9 +1486,8 @@
                                     )}
                                     {modalType === 'viewParty' && (() => {
                                         const party = parties.find(p => p.id === formData.id) || formData;
-                                        const leader = students.find(s => s.id === party.leaderId);
-                                        const core = students.find(s => s.id === party.coreMemberId);
                                         const members = students.filter(s => (party.memberIds || []).includes(s.id));
+                                        const orderedMembers = getOrderedMembers(party, members);
                                         const isMember = loggedInStudent && (party.memberIds || []).includes(loggedInStudent.id);
                                         const isLeaderOrCore = loggedInStudent && (party.leaderId === loggedInStudent.id || party.coreMemberId === loggedInStudent.id);
                                         const hasPendingJoin = loggedInStudent && (party.pendingJoin || []).includes(loggedInStudent.id);
@@ -1453,8 +1495,11 @@
                                         return (
                                             <div className="space-y-4">
                                                 <div>
-                                                    <p className="text-sm text-gray-500">당대표: <span className="font-bold text-gray-800">{leader ? maskName(leader.name) : '-'}</span>{core && <> · 최고위원: <span className="font-bold text-gray-800">{maskName(core.name)}</span></>}</p>
-                                                    <p className="text-sm text-gray-500 mt-1">당원 {members.length}명: {members.map(m => maskName(m.name)).join(', ') || '없음'}</p>
+                                                    <p className="text-xs text-gray-500 mb-2">당원 {members.length}명</p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {orderedMembers.map(m => renderMemberBadge(m, party))}
+                                                        {orderedMembers.length === 0 && <span className="text-xs text-gray-400 italic">아직 당원이 없습니다.</span>}
+                                                    </div>
                                                 </div>
                                                 {!loggedInStudent && <p className="text-xs text-gray-400 italic">가입/탈퇴를 신청하려면 먼저 학생 로그인을 해주세요.</p>}
                                                 {loggedInStudent && !isMember && !hasPendingJoin && (
@@ -1551,6 +1596,14 @@
                                                     <button onClick={() => saveSubsidyInputs(party.id, billsPassed, billsProposed)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded font-bold">저장</button>
                                                     <p className="text-xs text-gray-500 mt-2">당원수({members.length}) + 최고위원({party.coreMemberId ? 1 : 0}) + 가결({Number(billsPassed) || 0}) + 상정÷2 반올림({Math.round((Number(billsProposed) || 0) / 2)})</p>
                                                     <p className="text-lg font-black text-indigo-700 mt-1">= {preview} 코인</p>
+                                                </div>
+                                                <div className="border-t pt-3">
+                                                    <label className="block text-xs font-bold text-gray-600 mb-2">정당 색상 변경</label>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {PARTY_COLORS.map(c => (
+                                                            <button key={c.key} onClick={() => updateParties(list => list.map(p => p.id === party.id ? { ...p, color: c.key } : p))} title={c.label} className={`w-7 h-7 rounded-full border-2 ${c.swatch} ${(party.color || 'gray') === c.key ? 'ring-2 ring-offset-1 ring-govBlue' : 'border-gray-300'}`}></button>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                                 <div className="border-t pt-3">
                                                     <label className="block text-xs font-bold text-gray-600 mb-1">정당 관리 비밀번호 변경</label>
