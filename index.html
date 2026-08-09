@@ -97,6 +97,7 @@
         const IconEye = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
         const IconMessage = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>;
         const IconEdit = () => <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>;
+        const IconFlag = () => <svg className="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3v18M3 4h13l-2 4 2 4H3"></path></svg>;
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('executive');
@@ -125,6 +126,14 @@
             const [likedPosts, setLikedPosts] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('hakmin_liked_posts') || '[]'); } catch (e) { return []; }
             });
+
+            // 정당 관리 전용 State (회기 무관 전역)
+            const [globalStudents, setGlobalStudents] = useState(null);
+            const [parties, setParties] = useState([]);
+            const [loggedInStudentId, setLoggedInStudentId] = useState(() => {
+                const saved = localStorage.getItem('hakmin_student_id');
+                return saved ? Number(saved) : null;
+            });
             
             useEffect(() => {
                 const unsubscribeSettings = db.collection('settings').doc('global')
@@ -148,9 +157,23 @@
                         }
                     });
 
+                // 전역 학생 명부 연동 (회기 무관)
+                const unsubscribeStudents = db.collection('settings').doc('students')
+                    .onSnapshot((doc) => {
+                        setGlobalStudents(doc.exists ? (doc.data().list || []) : null);
+                    });
+
+                // 전역 정당 데이터 연동 (회기 무관)
+                const unsubscribeParties = db.collection('settings').doc('parties')
+                    .onSnapshot((doc) => {
+                        setParties(doc.exists ? (doc.data().list || []) : []);
+                    });
+
                 return () => {
                     unsubscribeSettings();
                     unsubscribeLaws();
+                    unsubscribeStudents();
+                    unsubscribeParties();
                 };
             }, []);
 
@@ -168,7 +191,7 @@
                         if (doc.exists) {
                             setAppData(prev => ({ ...prev, [currentSession]: doc.data() }));
                         } else {
-                            const initData = { students: initialStudents, bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls, freePosts: initialFreePosts };
+                            const initData = { bills: initialBills, executiveData: initialExecutive, praises: initialPraises, polls: initialPolls, freePosts: initialFreePosts };
                             setAppData(prev => ({ ...prev, [currentSession]: initData }));
                         }
                         setIsDataLoaded(true);
@@ -177,19 +200,34 @@
             }, [currentSession]);
 
             const currentSessionData = appData[currentSession] || {
-                students: [], bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: [], freePosts: []
+                bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: [], freePosts: []
             };
 
-            const students = currentSessionData.students || [];
+            const students = globalStudents || [];
             const bills = currentSessionData.bills || [];
             const executiveData = currentSessionData.executiveData || { report: '', complaints: [] };
             const praises = currentSessionData.praises || [];
             const polls = currentSessionData.polls || [];
             const freePosts = currentSessionData.freePosts || [];
+            const loggedInStudent = students.find(s => s.id === loggedInStudentId) || null;
+            const myParty = loggedInStudent ? parties.find(p => (p.memberIds || []).includes(loggedInStudent.id)) : null;
+
+            // 회기별 학생 명부를 전역 명부로 1회 이관 (settings/students 문서가 아직 없을 때만)
+            useEffect(() => {
+                if (globalStudents === null && isDataLoaded) {
+                    db.collection('settings').doc('students').set({ list: currentSessionData.students || [] });
+                }
+            }, [globalStudents, isDataLoaded, currentSession]);
 
             const handleSessionChange = (newSession) => db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
-            
-            const setStudents = (val) => db.collection('classData').doc(currentSession).set({ students: val }, { merge: true });
+
+            const updateStudents = (updater) => {
+                const docRef = db.collection('settings').doc('students');
+                return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
+                    const latest = (doc.exists && doc.data().list) || [];
+                    transaction.set(docRef, { list: updater(latest) }, { merge: true });
+                }));
+            };
             const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
             const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
             const setPraises = (val) => db.collection('classData').doc(currentSession).set({ praises: val }, { merge: true });
@@ -202,6 +240,13 @@
                 }));
             };
             const updateGlobalLaws = (newLawsList) => db.collection('settings').doc('laws').set({ lawList: newLawsList }, { merge: true });
+            const updateParties = (updater) => {
+                const docRef = db.collection('settings').doc('parties');
+                return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
+                    const latest = (doc.exists && doc.data().list) || [];
+                    transaction.set(docRef, { list: updater(latest) }, { merge: true });
+                }));
+            };
 
             const maskName = (name) => {
                 if (!isMasked) return name;
@@ -299,13 +344,16 @@
                     case 'addStudent':
                         if (!formData.name) return;
                         const newId = students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1;
-                        setStudents([...students, { id: newId, name: formData.name, coins: Number(formData.coins) || 0, password: '' }]);
+                        updateStudents(list => [...list, { id: newId, name: formData.name, coins: Number(formData.coins) || 0, password: formData.password || '', canCreateParty: !!formData.canCreateParty }]);
                         break;
                     case 'adjustCoin':
                         const amount = Number(formData.amount) || 0;
-                        setStudents(students.map(s => s.id === formData.id ? { ...s, coins: formData.type === 'add' ? s.coins + amount : Math.max(0, s.coins - amount) } : s));
+                        updateStudents(list => list.map(s => s.id === formData.id ? { ...s, coins: formData.type === 'add' ? s.coins + amount : Math.max(0, s.coins - amount) } : s));
                         break;
-                    case 'deleteStudent': setStudents(students.filter(s => s.id !== formData.id)); break;
+                    case 'deleteStudent': updateStudents(list => list.filter(s => s.id !== formData.id)); break;
+                    case 'studentSettings':
+                        updateStudents(list => list.map(s => s.id === formData.id ? { ...s, password: formData.password || '', canCreateParty: !!formData.canCreateParty } : s));
+                        break;
                     case 'changePassword':
                         const newPasswords = { ...passwords };
                         if (formData.newTeacherPwd) newPasswords.teacher = formData.newTeacherPwd;
@@ -321,10 +369,40 @@
                         const studentId = Number(formData.rewardStudentId);
                         const rewardAmount = Number(formData.rewardAmount);
                         if (studentId && rewardAmount > 0) {
-                            setStudents(students.map(s => s.id === studentId ? { ...s, coins: s.coins + rewardAmount } : s));
+                            updateStudents(list => list.map(s => s.id === studentId ? { ...s, coins: s.coins + rewardAmount } : s));
                             setPraises(praises.map(p => p.id === formData.id ? { ...p, status: '보상완료' } : p));
                         }
                         break;
+                    case 'studentLogin':
+                        const targetStudent = students.find(s => s.id === Number(formData.studentId));
+                        if (!targetStudent) { setModalError('학생을 선택하세요.'); return; }
+                        if ((targetStudent.password || '') !== (formData.password || '')) { setModalError('비밀번호가 일치하지 않습니다.'); return; }
+                        setLoggedInStudentId(targetStudent.id);
+                        localStorage.setItem('hakmin_student_id', String(targetStudent.id));
+                        break;
+                    case 'addParty':
+                        if (!formData.name || !loggedInStudent) return;
+                        const newParty = { id: Date.now(), name: formData.name, leaderId: loggedInStudent.id, coreMemberId: null, memberIds: [loggedInStudent.id], pendingJoin: [], pendingLeave: [], password: '', subsidyBySession: {} };
+                        updateParties(list => [...list, newParty]);
+                        break;
+                    case 'deleteParty': updateParties(list => list.filter(p => p.id !== formData.id)); break;
+                    case 'setPartyPassword': {
+                        if (!formData.newPwd || formData.newPwd.length < 2) { setModalError('비밀번호를 2자 이상 입력하세요.'); return; }
+                        const setPwdPartyId = formData.partyId;
+                        updateParties(list => list.map(p => p.id === setPwdPartyId ? { ...p, password: formData.newPwd } : p));
+                        setModalType('partyManage');
+                        setFormData({ partyId: setPwdPartyId });
+                        setModalError('');
+                        return;
+                    }
+                    case 'enterPartyPassword': {
+                        const gateParty = parties.find(p => p.id === formData.partyId);
+                        if (!gateParty || formData.pwdInput !== gateParty.password) { setModalError('비밀번호가 일치하지 않습니다.'); return; }
+                        setModalType('partyManage');
+                        setFormData({ partyId: formData.partyId });
+                        setModalError('');
+                        return;
+                    }
                     case 'addPoll':
                         if (!formData.title || !formData.options) return;
                         const validOptions = formData.options.filter(opt => opt.trim() !== '');
@@ -386,6 +464,52 @@
                 if (formData && formData.id === postId) setFormData({ ...formData, likes: (formData.likes || 0) + 1 });
             };
 
+            const requestJoinParty = (partyId) => {
+                if (!loggedInStudent || myParty) return;
+                updateParties(list => list.map(p => {
+                    if (p.id !== partyId) return p;
+                    if ((p.memberIds || []).includes(loggedInStudent.id) || (p.pendingJoin || []).includes(loggedInStudent.id)) return p;
+                    return { ...p, pendingJoin: [...(p.pendingJoin || []), loggedInStudent.id] };
+                }));
+            };
+            const requestLeaveParty = (partyId) => {
+                if (!loggedInStudent) return;
+                updateParties(list => list.map(p => {
+                    if (p.id !== partyId || p.leaderId === loggedInStudent.id) return p;
+                    if ((p.pendingLeave || []).includes(loggedInStudent.id)) return p;
+                    return { ...p, pendingLeave: [...(p.pendingLeave || []), loggedInStudent.id] };
+                }));
+            };
+            const approveJoin = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, memberIds: [...(p.memberIds || []), studentId], pendingJoin: (p.pendingJoin || []).filter(id => id !== studentId) } : p));
+            };
+            const rejectJoin = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, pendingJoin: (p.pendingJoin || []).filter(id => id !== studentId) } : p));
+            };
+            const approveLeave = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? {
+                    ...p,
+                    memberIds: (p.memberIds || []).filter(id => id !== studentId),
+                    pendingLeave: (p.pendingLeave || []).filter(id => id !== studentId),
+                    coreMemberId: p.coreMemberId === studentId ? null : p.coreMemberId
+                } : p));
+            };
+            const rejectLeave = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, pendingLeave: (p.pendingLeave || []).filter(id => id !== studentId) } : p));
+            };
+            const setCoreMember = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, coreMemberId: p.coreMemberId === studentId ? null : studentId } : p));
+            };
+            const transferLeader = (partyId, studentId) => {
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, leaderId: studentId, coreMemberId: p.coreMemberId === studentId ? null : p.coreMemberId } : p));
+            };
+            const saveSubsidyInputs = (partyId, billsPassed, billsProposed) => {
+                updateParties(list => list.map(p => p.id === partyId ? {
+                    ...p,
+                    subsidyBySession: { ...(p.subsidyBySession || {}), [currentSession]: { billsPassed: Number(billsPassed) || 0, billsProposed: Number(billsProposed) || 0 } }
+                } : p));
+            };
+
             return (
                 <div className="min-h-screen flex flex-col bg-govLight">
                     <header className="bg-govBlue text-white shadow-lg sticky top-0 z-20">
@@ -420,6 +544,7 @@
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-6 overflow-x-auto whitespace-nowrap scrollbar-hide">
                             {[
                                 { id: 'executive', name: '행정부', icon: <IconUsers /> },
+                                { id: 'party', name: '정당', icon: <IconFlag /> },
                                 { id: 'legislative', name: '입법부', icon: <IconScroll /> },
                                 { id: 'judicial', name: '사법부', icon: <IconGavel /> },
                                 { id: 'praise', name: '익명 칭찬', icon: <IconHeart /> },
@@ -656,7 +781,7 @@
                                                     <div className="ml-3 text-sm font-medium text-gray-700">이름 마스킹</div>
                                                 </label>
                                                 {(role === 'teacher') && (
-                                                    <button onClick={() => { setModalType('addStudent'); setFormData({ name: '', coins: 0 }); }} className="bg-gray-800 text-white px-3 py-2 rounded shadow text-sm hover:bg-gray-900 font-bold">+ 학생 추가</button>
+                                                    <button onClick={() => { setModalType('addStudent'); setFormData({ name: '', coins: 0, password: '', canCreateParty: false }); }} className="bg-gray-800 text-white px-3 py-2 rounded shadow text-sm hover:bg-gray-900 font-bold">+ 학생 추가</button>
                                                 )}
                                             </div>
                                         </div>
@@ -681,6 +806,9 @@
                                                                     <div className="flex justify-center space-x-2">
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'deduct' }); }} className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold hover:bg-red-200">- 차감</button>
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'add' }); }} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold hover:bg-blue-200">+ 지급</button>
+                                                                        {role === 'teacher' && (
+                                                                            <button onClick={() => { setModalType('studentSettings'); setFormData({ id: student.id, name: student.name, password: student.password || '', canCreateParty: !!student.canCreateParty }); }} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold hover:bg-gray-200">⚙ 설정</button>
+                                                                        )}
                                                                     </div>
                                                                 </td>
                                                             )}
@@ -834,6 +962,51 @@
                                         </div>
                                     </div>
                                 )}
+
+                                {activeTab === 'party' && (
+                                    <div className="space-y-6 animate-fade-in-up">
+                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100 gap-4">
+                                            <div>
+                                                <h2 className="text-2xl font-black text-govBlue">🏛️ 정당 관리</h2>
+                                                <p className="text-sm text-gray-500 mt-1">회기와 상관없이 계속 유지되는 정당 정보예요.</p>
+                                            </div>
+                                            <div className="flex items-center flex-wrap gap-2">
+                                                {loggedInStudent ? (
+                                                    <span className="text-sm font-bold bg-govLight px-3 py-2 rounded-lg border border-gray-200">
+                                                        {loggedInStudent.name}님으로 로그인됨
+                                                        <button onClick={() => { setLoggedInStudentId(null); localStorage.removeItem('hakmin_student_id'); }} className="ml-2 text-xs text-red-500 font-bold">로그아웃</button>
+                                                    </span>
+                                                ) : (
+                                                    <button onClick={() => { setModalType('studentLogin'); setFormData({}); setModalError(''); }} className="bg-govBlue text-white px-4 py-2 rounded-lg font-bold text-sm">학생 로그인</button>
+                                                )}
+                                                {(role === 'council' || (loggedInStudent && loggedInStudent.canCreateParty)) && (
+                                                    <button onClick={() => {
+                                                        if (!loggedInStudent) { setModalType('studentLogin'); setFormData({}); setModalError(''); }
+                                                        else { setModalType('addParty'); setFormData({ name: '' }); }
+                                                    }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm">+ 정당 개설</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {parties.map(party => {
+                                                const leader = students.find(s => s.id === party.leaderId);
+                                                const core = students.find(s => s.id === party.coreMemberId);
+                                                const isLeaderOrCore = loggedInStudent && (party.leaderId === loggedInStudent.id || party.coreMemberId === loggedInStudent.id);
+                                                return (
+                                                    <div key={party.id} onClick={() => { setModalType('viewParty'); setFormData(party); }} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <h3 className="text-lg font-bold text-gray-900">{party.name}</h3>
+                                                            {isLeaderOrCore && <span className="text-xs bg-govGold/20 text-govBlue px-2 py-1 rounded-full font-bold">내 정당</span>}
+                                                        </div>
+                                                        <p className="text-sm text-gray-500">당대표: {leader ? maskName(leader.name) : '-'}{core && ` · 최고위원: ${maskName(core.name)}`}</p>
+                                                        <p className="text-sm text-gray-500 mt-1">당원 {(party.memberIds || []).length}명</p>
+                                                    </div>
+                                                );
+                                            })}
+                                            {parties.length === 0 && <div className="col-span-full text-center py-10 text-gray-400 italic">아직 개설된 정당이 없습니다.</div>}
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </main>
@@ -869,6 +1042,14 @@
                                     {modalType === 'addFreePost' && '📝 자유게시판 글쓰기'}
                                     {modalType === 'viewFreePost' && '📖 자유게시판 글보기'}
                                     {modalType === 'deleteFreePost' && '게시글 삭제 확인'}
+                                    {modalType === 'studentSettings' && '학생 계정 설정'}
+                                    {modalType === 'studentLogin' && '🔑 학생 로그인'}
+                                    {modalType === 'addParty' && '🏛️ 새 정당 개설'}
+                                    {modalType === 'viewParty' && '🏛️ 정당 상세'}
+                                    {modalType === 'setPartyPassword' && '🔒 정당 관리 비밀번호 설정'}
+                                    {modalType === 'enterPartyPassword' && '🔒 정당 관리 비밀번호 확인'}
+                                    {modalType === 'partyManage' && '🛠️ 정당 관리'}
+                                    {modalType === 'deleteParty' && '정당 해산 확인'}
                                 </h3>
 
                                 <div className="space-y-4 mb-6">
@@ -1204,9 +1385,183 @@
                                     {modalType === 'addStudent' && (
                                         <>
                                             <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="이름" />
-                                            <input type="number" name="coins" value={formData.coins || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="초기 코인" />
+                                            <input type="number" name="coins" value={formData.coins || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="초기 코인" />
+                                            <input type="text" name="password" value={formData.password || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 mb-2" placeholder="개인 로그인 비밀번호 (선택)" />
+                                            <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                                <input type="checkbox" checked={!!formData.canCreateParty} onChange={(e) => setFormData({ ...formData, canCreateParty: e.target.checked })} />
+                                                정당 개설 권한 부여
+                                            </label>
                                         </>
                                     )}
+                                    {modalType === 'studentSettings' && (
+                                        <div className="space-y-3">
+                                            <p className="text-sm font-bold text-gray-700">{formData.name} 학생 계정 설정</p>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">개인 로그인 비밀번호</label>
+                                                <input type="text" name="password" value={formData.password || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="비워두면 비밀번호 없음" />
+                                            </div>
+                                            <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                                <input type="checkbox" checked={!!formData.canCreateParty} onChange={(e) => setFormData({ ...formData, canCreateParty: e.target.checked })} />
+                                                정당 개설 권한 부여
+                                            </label>
+                                        </div>
+                                    )}
+                                    {modalType === 'studentLogin' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">이름 선택</label>
+                                                <select name="studentId" value={formData.studentId || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2">
+                                                    <option value="">학생을 선택하세요</option>
+                                                    {students.map(s => <option key={s.id} value={s.id}>{s.id}번 {s.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="mt-3">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">비밀번호</label>
+                                                <input type="password" name="password" value={formData.password || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="비밀번호" />
+                                            </div>
+                                            {modalError && <p className="text-red-600 text-xs mt-2 font-bold">❌ {modalError}</p>}
+                                        </>
+                                    )}
+                                    {modalType === 'addParty' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-1">정당 이름</label>
+                                            <input type="text" name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="예: 학민당" />
+                                        </div>
+                                    )}
+                                    {modalType === 'setPartyPassword' && (
+                                        <div>
+                                            <p className="text-sm text-gray-600 mb-3">이 정당은 아직 관리 비밀번호가 없어요. 당대표/최고위원만 아는 비밀번호를 새로 설정하세요.</p>
+                                            <input type="password" name="newPwd" value={formData.newPwd || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="새 비밀번호" />
+                                            {modalError && <p className="text-red-600 text-xs mt-2 font-bold">❌ {modalError}</p>}
+                                        </div>
+                                    )}
+                                    {modalType === 'enterPartyPassword' && (
+                                        <div>
+                                            <input type="password" name="pwdInput" value={formData.pwdInput || ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" placeholder="정당 관리 비밀번호" />
+                                            {modalError && <p className="text-red-600 text-xs mt-2 font-bold">❌ {modalError}</p>}
+                                        </div>
+                                    )}
+                                    {modalType === 'viewParty' && (() => {
+                                        const party = parties.find(p => p.id === formData.id) || formData;
+                                        const leader = students.find(s => s.id === party.leaderId);
+                                        const core = students.find(s => s.id === party.coreMemberId);
+                                        const members = students.filter(s => (party.memberIds || []).includes(s.id));
+                                        const isMember = loggedInStudent && (party.memberIds || []).includes(loggedInStudent.id);
+                                        const isLeaderOrCore = loggedInStudent && (party.leaderId === loggedInStudent.id || party.coreMemberId === loggedInStudent.id);
+                                        const hasPendingJoin = loggedInStudent && (party.pendingJoin || []).includes(loggedInStudent.id);
+                                        const hasPendingLeave = loggedInStudent && (party.pendingLeave || []).includes(loggedInStudent.id);
+                                        return (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <p className="text-sm text-gray-500">당대표: <span className="font-bold text-gray-800">{leader ? maskName(leader.name) : '-'}</span>{core && <> · 최고위원: <span className="font-bold text-gray-800">{maskName(core.name)}</span></>}</p>
+                                                    <p className="text-sm text-gray-500 mt-1">당원 {members.length}명: {members.map(m => maskName(m.name)).join(', ') || '없음'}</p>
+                                                </div>
+                                                {!loggedInStudent && <p className="text-xs text-gray-400 italic">가입/탈퇴를 신청하려면 먼저 학생 로그인을 해주세요.</p>}
+                                                {loggedInStudent && !isMember && !hasPendingJoin && (
+                                                    <button onClick={() => requestJoinParty(party.id)} disabled={!!myParty} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm disabled:bg-gray-300 disabled:cursor-not-allowed">{myParty ? '이미 다른 정당에 가입되어 있어요' : '가입 신청하기'}</button>
+                                                )}
+                                                {hasPendingJoin && <p className="text-sm text-center text-indigo-600 font-bold py-2">가입 승인 대기중...</p>}
+                                                {loggedInStudent && isMember && party.leaderId !== loggedInStudent.id && !hasPendingLeave && (
+                                                    <button onClick={() => requestLeaveParty(party.id)} className="w-full bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-sm">탈퇴 신청하기</button>
+                                                )}
+                                                {hasPendingLeave && <p className="text-sm text-center text-red-500 font-bold py-2">탈퇴 승인 대기중...</p>}
+                                                {isLeaderOrCore && (
+                                                    <button onClick={() => {
+                                                        if (!party.password) { setModalType('setPartyPassword'); setFormData({ partyId: party.id, newPwd: '' }); }
+                                                        else { setModalType('enterPartyPassword'); setFormData({ partyId: party.id, pwdInput: '' }); }
+                                                    }} className="w-full bg-govBlue text-white py-2 rounded-lg font-bold text-sm">🛠️ 당 관리</button>
+                                                )}
+                                                {role === 'teacher' && (
+                                                    <div className="flex gap-2 pt-2 border-t">
+                                                        <button onClick={() => updateParties(list => list.map(p => p.id === party.id ? { ...p, password: '' } : p))} className="flex-1 bg-yellow-50 text-yellow-700 border border-yellow-200 py-2 rounded-lg font-bold text-xs">🔑 정당 비번 초기화</button>
+                                                        <button onClick={() => { setModalType('deleteParty'); setFormData({ id: party.id }); }} className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-xs">정당 해산</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                    {modalType === 'partyManage' && (() => {
+                                        const party = parties.find(p => p.id === formData.partyId);
+                                        if (!party) return <p className="text-gray-400 italic">정당 정보를 찾을 수 없습니다.</p>;
+                                        const members = students.filter(s => (party.memberIds || []).includes(s.id));
+                                        const sessionSubsidy = (party.subsidyBySession || {})[currentSession] || { billsPassed: 0, billsProposed: 0 };
+                                        const billsPassed = formData.billsPassed !== undefined ? formData.billsPassed : sessionSubsidy.billsPassed;
+                                        const billsProposed = formData.billsProposed !== undefined ? formData.billsProposed : sessionSubsidy.billsProposed;
+                                        const preview = (party.memberIds || []).length + (party.coreMemberId ? 1 : 0) + (Number(billsPassed) || 0) + Math.round((Number(billsProposed) || 0) / 2);
+                                        return (
+                                            <div className="space-y-5">
+                                                <div>
+                                                    <h5 className="font-bold text-sm text-gray-700 mb-2">📥 가입 신청 ({(party.pendingJoin || []).length})</h5>
+                                                    <div className="space-y-2">
+                                                        {(party.pendingJoin || []).length === 0 && <p className="text-xs text-gray-400">없음</p>}
+                                                        {(party.pendingJoin || []).map(sid => {
+                                                            const s = students.find(st => st.id === sid);
+                                                            return (
+                                                                <div key={sid} className="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                                                                    <span className="text-sm font-bold">{s ? maskName(s.name) : sid}</span>
+                                                                    <div className="flex gap-1">
+                                                                        <button onClick={() => approveJoin(party.id, sid)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold">승인</button>
+                                                                        <button onClick={() => rejectJoin(party.id, sid)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold">거부</button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-bold text-sm text-gray-700 mb-2">📤 탈퇴 신청 ({(party.pendingLeave || []).length})</h5>
+                                                    <div className="space-y-2">
+                                                        {(party.pendingLeave || []).length === 0 && <p className="text-xs text-gray-400">없음</p>}
+                                                        {(party.pendingLeave || []).map(sid => {
+                                                            const s = students.find(st => st.id === sid);
+                                                            return (
+                                                                <div key={sid} className="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                                                                    <span className="text-sm font-bold">{s ? maskName(s.name) : sid}</span>
+                                                                    <div className="flex gap-1">
+                                                                        <button onClick={() => approveLeave(party.id, sid)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold">승인</button>
+                                                                        <button onClick={() => rejectLeave(party.id, sid)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold">거부</button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-bold text-sm text-gray-700 mb-2">👥 당원 관리 ({members.length}명)</h5>
+                                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                                        {members.map(m => (
+                                                            <div key={m.id} className="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                                                                <span className="text-sm font-bold">{maskName(m.name)} {party.leaderId === m.id && <span className="text-govGold">👑</span>}{party.coreMemberId === m.id && <span className="text-indigo-500">⭐</span>}</span>
+                                                                <div className="flex gap-1">
+                                                                    {party.leaderId !== m.id && (
+                                                                        <button onClick={() => transferLeader(party.id, m.id)} className="text-[10px] bg-govGold/20 text-govBlue px-2 py-1 rounded font-bold">당대표 위임</button>
+                                                                    )}
+                                                                    <button onClick={() => setCoreMember(party.id, m.id)} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold">{party.coreMemberId === m.id ? '최고위원 해제' : '최고위원 지정'}</button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                                    <h5 className="font-bold text-sm text-indigo-800 mb-2">💰 {currentSession} 지원금 계산</h5>
+                                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                                        <div><label className="block text-xs font-bold text-gray-600 mb-1">가결시킨 법안 수</label><input type="number" min="0" name="billsPassed" value={billsPassed} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-1.5 text-sm" /></div>
+                                                        <div><label className="block text-xs font-bold text-gray-600 mb-1">상정한 법안 수</label><input type="number" min="0" name="billsProposed" value={billsProposed} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-1.5 text-sm" /></div>
+                                                    </div>
+                                                    <button onClick={() => saveSubsidyInputs(party.id, billsPassed, billsProposed)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded font-bold">저장</button>
+                                                    <p className="text-xs text-gray-500 mt-2">당원수({members.length}) + 최고위원({party.coreMemberId ? 1 : 0}) + 가결({Number(billsPassed) || 0}) + 상정÷2 반올림({Math.round((Number(billsProposed) || 0) / 2)})</p>
+                                                    <p className="text-lg font-black text-indigo-700 mt-1">= {preview} 코인</p>
+                                                </div>
+                                                <div className="border-t pt-3">
+                                                    <label className="block text-xs font-bold text-gray-600 mb-1">정당 관리 비밀번호 변경</label>
+                                                    <div className="flex gap-2">
+                                                        <input type="password" value={formData.newManagePwd || ''} onChange={(e) => setFormData({ ...formData, newManagePwd: e.target.value })} className="flex-1 border border-gray-300 rounded p-1.5 text-sm" placeholder="새 비밀번호" />
+                                                        <button onClick={() => { if (formData.newManagePwd) { updateParties(list => list.map(p => p.id === party.id ? { ...p, password: formData.newManagePwd } : p)); setFormData({ ...formData, newManagePwd: '' }); } }} className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded font-bold">변경</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                     {modalType === 'rewardPraise' && (
                                         <>
                                             <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 mb-3"><p className="text-sm font-bold text-indigo-800">지급 대상: {formData.targetName}</p></div>
@@ -1230,7 +1585,7 @@
                                 </div>
 
                                 <div className="flex justify-end space-x-2">
-                                    {modalType === 'viewBill' || modalType === 'viewFreePost' ? (
+                                    {modalType === 'viewBill' || modalType === 'viewFreePost' || modalType === 'viewParty' || modalType === 'partyManage' ? (
                                         <button onClick={closeModal} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold w-full mt-2">닫기</button>
                                     ) : (
                                         <>
