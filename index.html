@@ -230,12 +230,11 @@
             const loggedInStudent = students.find(s => s.id === loggedInStudentId) || null;
             const myParty = loggedInStudent ? parties.find(p => (p.memberIds || []).includes(loggedInStudent.id)) : null;
 
-            // 회기별 학생 명부를 전역 명부로 1회 이관 (settings/students 문서가 아직 없을 때만)
-            useEffect(() => {
-                if (globalStudents === null && isDataLoaded) {
-                    db.collection('settings').doc('students').set({ list: currentSessionData.students || [] });
-                }
-            }, [globalStudents, isDataLoaded, currentSession]);
+            // [삭제됨] 과거 "회기별 학생 명부 → 전역 명부" 1회 이관 코드가 여기 있었으나,
+            // globalStudents의 초기값(null)과 "문서가 아직 로딩되지 않음"을 구분하지 못해
+            // settings/students 리스너가 classData 리스너보다 늦게 응답하면(네트워크 지연 등)
+            // 학생 명부 전체가 빈 배열로 덮어써지는 심각한 데이터 유실 버그가 있었습니다.
+            // 이관은 이미 완료되었으므로(3752b1d) 더 이상 필요하지 않아 제거합니다.
 
             const handleSessionChange = (newSession) => db.collection('settings').doc('global').set({ activeSession: newSession }, { merge: true });
 
@@ -246,10 +245,22 @@
                     transaction.set(docRef, { list: updater(latest) }, { merge: true });
                 }));
             };
-            const setBills = (val) => db.collection('classData').doc(currentSession).set({ bills: val }, { merge: true });
-            const setExecutiveData = (val) => db.collection('classData').doc(currentSession).set({ executiveData: val }, { merge: true });
-            const setPraises = (val) => db.collection('classData').doc(currentSession).set({ praises: val }, { merge: true });
-            const setPolls = (val) => db.collection('classData').doc(currentSession).set({ polls: val }, { merge: true });
+            // classData 문서의 개별 필드(법안/행정부/칭찬/여론조사)를 트랜잭션으로 갱신.
+            // 예전에는 로컬(클라이언트) state를 그대로 write했는데, 여러 학생이 거의 동시에
+            // 법안을 등록/투표하면 나중 write가 서버의 최신 값을 덮어써 방금 등록된 데이터가
+            // 통째로 사라지는 경쟁 상태(lost update)가 발생했습니다. 트랜잭션 안에서 서버의
+            // 최신 값을 다시 읽은 뒤 그 값을 기준으로 갱신하도록 수정합니다.
+            const updateClassField = (field, defaultVal, updater) => {
+                const docRef = db.collection('classData').doc(currentSession);
+                return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
+                    const latest = (doc.exists && doc.data()[field] !== undefined) ? doc.data()[field] : defaultVal;
+                    transaction.set(docRef, { [field]: updater(latest) }, { merge: true });
+                }));
+            };
+            const updateBills = (updater) => updateClassField('bills', initialBills, updater);
+            const updateExecutiveData = (updater) => updateClassField('executiveData', initialExecutive, updater);
+            const updatePraises = (updater) => updateClassField('praises', initialPraises, updater);
+            const updatePolls = (updater) => updateClassField('polls', initialPolls, updater);
             const updateFreePosts = (updater) => {
                 const docRef = db.collection('classData').doc(currentSession);
                 return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
@@ -320,10 +331,10 @@
                         break;
                     case 'addBill':
                         if (!formData.title || !formData.content) return;
-                        setBills([{
+                        updateBills(latestBills => [{
                             id: Date.now(), title: formData.title, proposer: formData.proposer || '익명',
                             sponsors: formData.sponsors || '없음', content: formData.content, status: '계류', date: new Date().toISOString().split('T')[0]
-                        }, ...bills]);
+                        }, ...latestBills]);
                         break;
                     case 'addAmendmentBill':
                         if (!formData.title || !formData.amendmentContent) return;
@@ -347,28 +358,28 @@
                         
                         const finalContent = `${targetText}[개정 제안 내용]\n${formData.amendmentContent}`;
 
-                        setBills([{
+                        updateBills(latestBills => [{
                             id: Date.now(), title: formData.title, proposer: formData.proposer || '익명',
-                            sponsors: formData.sponsors || '없음', content: finalContent, status: '계류', 
+                            sponsors: formData.sponsors || '없음', content: finalContent, status: '계류',
                             date: new Date().toISOString().split('T')[0]
-                        }, ...bills]);
+                        }, ...latestBills]);
                         break;
                     case 'editBill':
                         if (!formData.title || !formData.content) return;
-                        setBills(bills.map(b => b.id === formData.id ? { ...b, title: formData.title, proposer: formData.proposer, sponsors: formData.sponsors, content: formData.content } : b));
+                        updateBills(latestBills => latestBills.map(b => b.id === formData.id ? { ...b, title: formData.title, proposer: formData.proposer, sponsors: formData.sponsors, content: formData.content } : b));
                         break;
-                    case 'deleteBill': setBills(bills.filter(b => b.id !== formData.id)); break;
-                    case 'confirmBill': setBills(bills.map(b => b.id === formData.id ? { ...b, status: formData.status } : b)); break;
-                    case 'editReport': setExecutiveData({ ...executiveData, report: formData.report }); break;
+                    case 'deleteBill': updateBills(latestBills => latestBills.filter(b => b.id !== formData.id)); break;
+                    case 'confirmBill': updateBills(latestBills => latestBills.map(b => b.id === formData.id ? { ...b, status: formData.status } : b)); break;
+                    case 'editReport': updateExecutiveData(latest => ({ ...latest, report: formData.report })); break;
                     case 'addComplaint':
                         if (!formData.text) return;
-                        setExecutiveData({ ...executiveData, complaints: [...(executiveData.complaints || []), { id: Date.now(), text: formData.text, status: '대기', reply: '' }] });
+                        updateExecutiveData(latest => ({ ...latest, complaints: [...(latest.complaints || []), { id: Date.now(), text: formData.text, status: '대기', reply: '' }] }));
                         break;
                     case 'manageComplaint':
-                        setExecutiveData({ ...executiveData, complaints: executiveData.complaints.map(c => c.id === formData.id ? { ...c, status: formData.status, reply: formData.reply } : c) });
+                        updateExecutiveData(latest => ({ ...latest, complaints: (latest.complaints || []).map(c => c.id === formData.id ? { ...c, status: formData.status, reply: formData.reply } : c) }));
                         break;
                     case 'deleteComplaint':
-                        setExecutiveData({ ...executiveData, complaints: (executiveData.complaints || []).filter(c => c.id !== formData.id) });
+                        updateExecutiveData(latest => ({ ...latest, complaints: (latest.complaints || []).filter(c => c.id !== formData.id) }));
                         break;
                     case 'addStudent':
                         if (!formData.name) return;
@@ -391,15 +402,15 @@
                         break;
                     case 'addPraise':
                         if (!formData.targetName || !formData.reason || !formData.detail || !formData.proposerName) return;
-                        setPraises([{ id: Date.now(), targetName: formData.targetName, proposerName: formData.proposerName, reason: formData.reason, detail: formData.detail, date: new Date().toISOString().split('T')[0], status: '대기' }, ...praises]);
+                        updatePraises(latest => [{ id: Date.now(), targetName: formData.targetName, proposerName: formData.proposerName, reason: formData.reason, detail: formData.detail, date: new Date().toISOString().split('T')[0], status: '대기' }, ...latest]);
                         break;
-                    case 'deletePraise': setPraises(praises.filter(p => p.id !== formData.id)); break;
+                    case 'deletePraise': updatePraises(latest => latest.filter(p => p.id !== formData.id)); break;
                     case 'rewardPraise':
                         const studentId = Number(formData.rewardStudentId);
                         const rewardAmount = Number(formData.rewardAmount);
                         if (studentId && rewardAmount > 0) {
                             updateStudents(list => list.map(s => s.id === studentId ? { ...s, coins: s.coins + rewardAmount } : s));
-                            setPraises(praises.map(p => p.id === formData.id ? { ...p, status: '보상완료' } : p));
+                            updatePraises(latest => latest.map(p => p.id === formData.id ? { ...p, status: '보상완료' } : p));
                         }
                         break;
                     case 'studentLogin':
@@ -436,28 +447,28 @@
                         if (!formData.title || !formData.options) return;
                         const validOptions = formData.options.filter(opt => opt.trim() !== '');
                         if(validOptions.length < 2) return;
-                        setPolls([{ id: Date.now(), title: formData.title, options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })), passwords: {}, date: new Date().toISOString().split('T')[0], status: '진행중' }, ...polls]);
+                        updatePolls(latest => [{ id: Date.now(), title: formData.title, options: validOptions.map((opt, idx) => ({ id: idx, text: opt, voters: [] })), passwords: {}, date: new Date().toISOString().split('T')[0], status: '진행중' }, ...latest]);
                         break;
-                    case 'viewPoll':
+                    case 'viewPoll': {
                         if (!formData.studentNum || formData.selectedOptionId === null || formData.selectedOptionId === undefined) return;
                         if (!formData.studentPassword) { setModalError('비밀번호를 입력하세요.'); return; }
                         const voterNum = Number(formData.studentNum);
                         const currentPoll = polls.find(p => p.id === formData.pollId);
-                        const pollPasswords = currentPoll.passwords || {};
-                        if (pollPasswords[voterNum] && pollPasswords[voterNum] !== formData.studentPassword) { setModalError('비밀번호가 일치하지 않습니다.'); return; } 
-                        else { pollPasswords[voterNum] = formData.studentPassword; }
-                        const updatedPolls = polls.map(poll => {
-                            if (poll.id === formData.pollId) {
-                                const newOptions = poll.options.map(opt => ({ ...opt, voters: (opt.voters || []).filter(v => v !== voterNum) }));
-                                const targetOption = newOptions.find(opt => opt.id === Number(formData.selectedOptionId));
-                                if(targetOption) targetOption.voters.push(voterNum);
-                                return { ...poll, options: newOptions, passwords: pollPasswords };
-                            }
-                            return poll;
-                        });
-                        setPolls(updatedPolls);
+                        const existingPwd = currentPoll && (currentPoll.passwords || {})[voterNum];
+                        if (existingPwd && existingPwd !== formData.studentPassword) { setModalError('비밀번호가 일치하지 않습니다.'); return; }
+                        // 투표는 서버의 최신 값(latest)을 기준으로 다시 계산한다: 여러 학생이 거의
+                        // 동시에 투표하면 로컬 state(polls)가 서로의 표를 덮어쓸 수 있기 때문.
+                        updatePolls(latest => latest.map(poll => {
+                            if (poll.id !== formData.pollId) return poll;
+                            const pollPasswords = { ...(poll.passwords || {}), [voterNum]: formData.studentPassword };
+                            const newOptions = poll.options.map(opt => ({ ...opt, voters: (opt.voters || []).filter(v => v !== voterNum) }));
+                            const targetOption = newOptions.find(opt => opt.id === Number(formData.selectedOptionId));
+                            if (targetOption) targetOption.voters = [...targetOption.voters, voterNum];
+                            return { ...poll, options: newOptions, passwords: pollPasswords };
+                        }));
                         break;
-                    case 'deletePoll': setPolls(polls.filter(p => p.id !== formData.pollId)); break;
+                    }
+                    case 'deletePoll': updatePolls(latest => latest.filter(p => p.id !== formData.pollId)); break;
                     case 'addFreePost':
                         if (!formData.title || !formData.content) return;
                         if (formData.content.length > 300) return;
