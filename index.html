@@ -170,7 +170,7 @@
                             const data = doc.data();
                             setGlobalLaws(data.lawList || []);
                         } else {
-                            db.collection('settings').doc('laws').set({ lawList: initialLawsData });
+                            db.collection('settings').doc('laws').set({ lawList: initialLawsData }, { merge: true });
                             setGlobalLaws(initialLawsData);
                         }
                     });
@@ -268,7 +268,17 @@
                     transaction.set(docRef, { freePosts: updater(latestFreePosts) }, { merge: true });
                 }));
             };
-            const updateGlobalLaws = (newLawsList) => db.collection('settings').doc('laws').set({ lawList: newLawsList }, { merge: true });
+            // settings/laws(현행 법률집)도 bills와 같은 이유로 트랜잭션으로 갱신.
+            // 기존에는 로컬 state(globalLaws)를 기준으로 lawList 전체를 그냥 덮어썼기 때문에,
+            // 두 명이 거의 동시에 법률을 추가/수정/삭제하면 나중 write가 서버의 최신 값을
+            // 덮어써서 법률집 전체가 사라지는 lost-update가 발생할 수 있었음.
+            const updateGlobalLaws = (updater) => {
+                const docRef = db.collection('settings').doc('laws');
+                return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
+                    const latest = (doc.exists && doc.data().lawList) || initialLawsData;
+                    transaction.set(docRef, { lawList: updater(latest) }, { merge: true });
+                }));
+            };
             const updateParties = (updater) => {
                 const docRef = db.collection('settings').doc('parties');
                 return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
@@ -320,14 +330,16 @@
                             return { articleNum: idx + 1, title: art.title, clauses: validClauses };
                         });
                         const newLaw = { id: formData.id || 'law_' + Date.now(), title: formData.title, articles: updatedArticles };
-                        let newLawsList = modalType === 'addLaw' ? [...globalLaws, newLaw] : globalLaws.map(l => l.id === newLaw.id ? newLaw : l);
-                        updateGlobalLaws(newLawsList);
-                        if(modalType === 'addLaw') setSelectedLawId(newLaw.id);
+                        const isAddLaw = modalType === 'addLaw';
+                        updateGlobalLaws(latestLaws => isAddLaw ? [...latestLaws, newLaw] : latestLaws.map(l => l.id === newLaw.id ? newLaw : l));
+                        if (isAddLaw) setSelectedLawId(newLaw.id);
                         break;
                     case 'deleteLaw':
-                        const filteredLaws = globalLaws.filter(l => l.id !== formData.id);
-                        updateGlobalLaws(filteredLaws);
-                        if (selectedLawId === formData.id) setSelectedLawId(filteredLaws.length > 0 ? filteredLaws[0].id : '');
+                        updateGlobalLaws(latestLaws => latestLaws.filter(l => l.id !== formData.id));
+                        if (selectedLawId === formData.id) {
+                            const remainingLaws = globalLaws.filter(l => l.id !== formData.id);
+                            setSelectedLawId(remainingLaws.length > 0 ? remainingLaws[0].id : '');
+                        }
                         break;
                     case 'addBill':
                         if (!formData.title || !formData.content) return;
