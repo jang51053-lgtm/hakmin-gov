@@ -87,6 +87,20 @@
             }
         ];
 
+        // 전자투표 가결 기준 기본값 (선생님이 '⚙️ 가결 기준'에서 직접 조정 가능)
+        // percent: 가결에 필요한 찬성 비율(%), base: 'attend'(출석=투표 참여자 기준) | 'eligible'(재적=투표권자 전체 기준)
+        // abstainAsAttend: 기권도 출석 인원에 포함할지, autoLogout: 투표 후 자동 로그아웃(공용 기기 대리투표 방지)
+        const DEFAULT_VOTE_RULE = { percent: 60, base: 'attend', abstainAsAttend: true, autoLogout: true };
+        const VOTE_LABEL = { yes: '찬성', no: '반대', abstain: '기권' };
+        const VOTE_STYLE = { yes: 'bg-green-100 text-green-800 border-green-300', no: 'bg-red-100 text-red-800 border-red-300', abstain: 'bg-gray-100 text-gray-700 border-gray-300' };
+        // 출석 인원 × 기준(%) 이상 찬성이면 가결. (예: 출석 18명 × 60% = 10.8 → 찬성 11표 이상)
+        const calcVoteResult = ({ yes, no, abstain, eligible, percent, base, abstainAsAttend, attendOverride }) => {
+            const autoAttend = base === 'eligible' ? eligible : (yes + no + (abstainAsAttend ? abstain : 0));
+            const attend = (attendOverride !== undefined && attendOverride !== null && attendOverride !== '') ? Number(attendOverride) : autoAttend;
+            const needed = Math.max(1, Math.ceil(attend * Number(percent) / 100 - 1e-9));
+            return { yes, no, abstain, eligible, attend, autoAttend, percent: Number(percent), base, needed, passed: yes >= needed };
+        };
+
         const PARTY_COLORS = [
             { key: 'gray', label: '기본(흰색)', bg: 'bg-white', border: 'border-gray-100', swatch: 'bg-white' },
             { key: 'red', label: '빨강', bg: 'bg-red-50', border: 'border-red-200', swatch: 'bg-red-400' },
@@ -140,6 +154,7 @@
             
             const [currentSession, setCurrentSession] = useState('3월');
             const [passwords, setPasswords] = useState({ teacher: '1234', council: '5678' });
+            const [voteRule, setVoteRule] = useState(DEFAULT_VOTE_RULE);
             const [appData, setAppData] = useState({});
             const [likedPosts, setLikedPosts] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('hakmin_liked_posts') || '[]'); } catch (e) { return []; }
@@ -160,19 +175,30 @@
                             const data = doc.data();
                             setCurrentSession(data.activeSession || '3월');
                             if (data.passwords) setPasswords(data.passwords);
+                            setVoteRule({ ...DEFAULT_VOTE_RULE, ...(data.voteRule || {}) });
                         }
                     });
 
                 // 전역 법률 데이터 연동
                 const unsubscribeLaws = db.collection('settings').doc('laws')
-                    .onSnapshot((doc) => {
+                    .onSnapshot({ includeMetadataChanges: true }, (doc) => {
                         if (doc.exists) {
                             const data = doc.data();
                             setGlobalLaws(data.lawList || []);
-                        } else {
-                            db.collection('settings').doc('laws').set({ lawList: initialLawsData }, { merge: true });
-                            setGlobalLaws(initialLawsData);
+                        } else if (!doc.metadata.fromCache) {
+                            // [버그 수정] 법률집 전체가 초기값(헌법·학급 생활법 2개)으로 되돌아가던 원인.
+                            // 와이파이가 약하거나 오프라인인 기기에서는 Firestore가 서버 응답 전에
+                            // "캐시 기준으로 문서 없음(exists=false)" 스냅샷을 먼저 보내는데, 예전 코드는
+                            // 이것을 "문서가 진짜 없다"로 오해해 초기 데이터로 lawList 전체를 덮어썼습니다.
+                            // (merge:true여도 lawList 필드 자체는 통째로 교체됨) 이 쓰기는 오프라인 대기열에
+                            // 남아 있다가 인터넷이 연결되는 순간 서버의 실제 법률집을 덮어썼습니다.
+                            // → 서버가 직접 "없음"이라고 확인한 경우에만, 그것도 트랜잭션으로 "정말 없을 때만" 생성합니다.
+                            const lawsRef = db.collection('settings').doc('laws');
+                            db.runTransaction(t => t.get(lawsRef).then(d => {
+                                if (!d.exists) t.set(lawsRef, { lawList: initialLawsData });
+                            })).catch(err => console.error('법률집 초기화 실패', err));
                         }
+                        // fromCache && !exists 인 경우: 아직 서버 응답 전이므로 아무것도 쓰지 않고 기다립니다.
                     });
 
                 // 전역 학생 명부 연동 (회기 무관)
@@ -217,6 +243,33 @@
                 return () => unsubscribeData();
             }, [currentSession]);
 
+            // [개선] 법안은 회기(월)별 문서(classData/3월, 4월...)에 저장되기 때문에, 선생님이 회기를
+            // 바꾸면 지난 회기에 등록한 법안(특히 계류 법안)이 화면에서 통째로 사라진 것처럼 보였습니다.
+            // 데이터는 지워지지 않았으므로, 입법 현황에서 지난 회기 법안을 열람하고 계류 법안을
+            // 현재 회기로 가져올 수 있게 합니다.
+            const [billViewSession, setBillViewSession] = useState(null); // null = 현재 회기
+            const [pastBills, setPastBills] = useState([]);
+            const viewingPastSession = billViewSession && billViewSession !== currentSession;
+            useEffect(() => {
+                if (!viewingPastSession) { setPastBills([]); return; }
+                const unsub = db.collection('classData').doc(billViewSession)
+                    .onSnapshot(doc => setPastBills((doc.exists && doc.data().bills) || []));
+                return () => unsub();
+            }, [billViewSession, currentSession]);
+
+            const bringBillToCurrentSession = (fromSession, billId) => {
+                const fromRef = db.collection('classData').doc(fromSession);
+                const toRef = db.collection('classData').doc(currentSession);
+                return db.runTransaction(t => Promise.all([t.get(fromRef), t.get(toRef)]).then(([fromDoc, toDoc]) => {
+                    const fromBills = (fromDoc.exists && fromDoc.data().bills) || [];
+                    const toBills = (toDoc.exists && toDoc.data().bills) || [];
+                    const bill = fromBills.find(b => b.id === billId);
+                    if (!bill || toBills.some(b => b.id === billId)) return;
+                    t.set(toRef, { bills: [{ ...bill, carriedFrom: fromSession }, ...toBills] }, { merge: true });
+                    t.set(fromRef, { bills: fromBills.filter(b => b.id !== billId) }, { merge: true });
+                }));
+            };
+
             const currentSessionData = appData[currentSession] || {
                 bills: [], executiveData: { report: '', complaints: [] }, praises: [], polls: [], freePosts: []
             };
@@ -229,6 +282,129 @@
             const freePosts = currentSessionData.freePosts || [];
             const loggedInStudent = students.find(s => s.id === loggedInStudentId) || null;
             const myParty = loggedInStudent ? parties.find(p => (p.memberIds || []).includes(loggedInStudent.id)) : null;
+
+            // ===================== 전자투표 =====================
+            // 데이터 구조 (동시 투표 시 데이터 유실이 없도록 '한 사람 = 문서 하나'로 저장)
+            //   classData/{회기}/voteRounds/{법안id}_{round}/ballots/{학생번호} = { choice, name, at }
+            //   - 학생은 자기 문서 하나만 쓰므로 17~18명이 동시에 눌러도 서로 덮어쓰지 않음
+            //   - 학생번호가 문서 이름이라 1인 1표 (다시 누르면 표가 바뀜)
+            //   - 투표 시작/마감 정보와 최종 결과는 법안(bills 배열)에 트랜잭션으로 저장
+            const eligibleVoters = students.filter(s => !s.noVote);
+            const voteRoundRef = (billId, round, session = currentSession) =>
+                db.collection('classData').doc(session).collection('voteRounds').doc(`${billId}_${round}`);
+            const [ballotsByBill, setBallotsByBill] = useState({});
+            const [voteToast, setVoteToast] = useState('');
+            const activeVoteKeys = bills.filter(b => b.vote && (b.vote.status === 'open' || b.vote.status === 'closing'))
+                .map(b => `${b.id}_${b.vote.round}`).sort().join(',');
+            useEffect(() => {
+                if (!activeVoteKeys) { setBallotsByBill({}); return; }
+                const unsubs = activeVoteKeys.split(',').map(key => {
+                    const billId = key.split('_')[0];
+                    return db.collection('classData').doc(currentSession).collection('voteRounds').doc(key).collection('ballots')
+                        .onSnapshot(snap => {
+                            const list = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
+                            setBallotsByBill(prev => ({ ...prev, [billId]: list }));
+                        });
+                });
+                return () => unsubs.forEach(u => u());
+            }, [activeVoteKeys, currentSession]);
+
+            const countBallots = (ballots) => {
+                const eligibleIds = new Set(eligibleVoters.map(s => s.id));
+                const valid = (ballots || []).filter(b => eligibleIds.has(b.id));
+                return {
+                    valid,
+                    yes: valid.filter(b => b.choice === 'yes').length,
+                    no: valid.filter(b => b.choice === 'no').length,
+                    abstain: valid.filter(b => b.choice === 'abstain').length
+                };
+            };
+
+            const openVote = (bill) => updateBills(latest => latest.map(b => b.id === bill.id
+                ? { ...b, vote: { status: 'open', round: Date.now(), openedAt: new Date().toISOString() }, voteResult: null } : b));
+            const cancelVote = (bill) => updateBills(latest => latest.map(b => b.id === bill.id ? { ...b, vote: null } : b));
+
+            const castVote = (bill, choice) => {
+                if (!loggedInStudent || loggedInStudent.noVote || !bill.vote || bill.vote.status !== 'open') return;
+                const studentName = loggedInStudent.name;
+                voteRoundRef(bill.id, bill.vote.round).collection('ballots').doc(String(loggedInStudent.id))
+                    .set({ choice, name: studentName, at: firebase.firestore.FieldValue.serverTimestamp() })
+                    .then(() => {
+                        if (voteRule.autoLogout) {
+                            setVoteToast(`${studentName} 학생, [${VOTE_LABEL[choice]}] 투표가 저장되었습니다. 다음 친구를 위해 자동 로그아웃됩니다.`);
+                            setLoggedInStudentId(null); localStorage.removeItem('hakmin_student_id');
+                        } else {
+                            setVoteToast(`[${VOTE_LABEL[choice]}] 투표가 저장되었습니다. 마감 전까지는 바꿀 수 있어요.`);
+                        }
+                        setTimeout(() => setVoteToast(''), 3500);
+                    })
+                    .catch(() => setVoteToast('투표 저장에 실패했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.'));
+            };
+
+            // 마감: ① 법안을 'closing'으로 바꿔 더 이상 투표를 받지 않고 → ② 서버에서 표를 다시 읽어 → ③ 결과를 확정 저장
+            const finalizeVote = async (bill, attendOverride, percent) => {
+                await updateBills(latest => latest.map(b => b.id === bill.id && b.vote ? { ...b, vote: { ...b.vote, status: 'closing' } } : b));
+                const snap = await voteRoundRef(bill.id, bill.vote.round).collection('ballots').get({ source: 'server' });
+                const { valid, yes, no, abstain } = countBallots(snap.docs.map(d => ({ id: Number(d.id), ...d.data() })));
+                const result = calcVoteResult({ yes, no, abstain, eligible: eligibleVoters.length, percent, base: voteRule.base, abstainAsAttend: voteRule.abstainAsAttend, attendOverride });
+                const ballotList = valid.map(b => ({ id: b.id, name: b.name, choice: b.choice })).sort((a, c) => a.id - c.id);
+                const notVoted = eligibleVoters.filter(s => !valid.some(b => b.id === s.id)).map(s => ({ id: s.id, name: s.name }));
+                await updateBills(latest => latest.map(b => b.id === bill.id ? {
+                    ...b,
+                    status: result.passed ? '가결' : '부결',
+                    vote: { ...b.vote, status: 'closed', closedAt: new Date().toISOString() },
+                    voteResult: { ...result, ballots: ballotList, notVoted }
+                } : b));
+                return result;
+            };
+
+            const renderVoteResultLine = (r) => r ? (
+                <p className="text-xs text-gray-600 mt-1">🗳️ 찬성 <b className="text-green-700">{r.yes}</b> · 반대 <b className="text-red-700">{r.no}</b> · 기권 <b>{r.abstain}</b>
+                    <span className="text-gray-400"> (출석 {r.attend}명 × {r.percent}% → {r.needed}표 필요)</span></p>
+            ) : null;
+            const renderVotePanel = (bill) => {
+                const v = bill.vote;
+                const ballots = ballotsByBill[bill.id] || [];
+                const { yes, no, abstain, valid } = countBallots(ballots);
+                const myBallot = loggedInStudent ? ballots.find(b => b.id === loggedInStudent.id) : null;
+                const stop = (e) => e.stopPropagation();
+                return (
+                    <div onClick={stop} className="mt-4 pt-3 border-t-2 border-dashed border-indigo-200 cursor-default">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-black text-indigo-700 animate-pulse">🗳️ 전자투표 {v.status === 'open' ? '진행 중' : '마감 처리 중…'}</span>
+                            <span className="text-xs font-bold text-gray-500">참여 {valid.length} / {eligibleVoters.length}명</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+                            <div className="h-full bg-indigo-400 transition-all" style={{ width: `${eligibleVoters.length ? (valid.length / eligibleVoters.length) * 100 : 0}%` }}></div>
+                        </div>
+                        {v.status === 'open' && (
+                            !loggedInStudent ? (
+                                <button onClick={() => { setModalType('studentLogin'); setFormData({}); setModalError(''); }} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700">🔑 로그인하고 투표하기</button>
+                            ) : loggedInStudent.noVote ? (
+                                <p className="text-xs text-gray-500 text-center bg-gray-50 rounded p-2">{loggedInStudent.name} 학생은 이번 투표 대상이 아닙니다.</p>
+                            ) : (
+                                <div>
+                                    <p className="text-xs text-gray-600 mb-2"><b>{loggedInStudent.name}</b> 학생{myBallot ? <> · 현재 내 선택: <b>{VOTE_LABEL[myBallot.choice]}</b> (마감 전까지 변경 가능)</> : ' · 아직 투표하지 않았어요'}</p>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {['yes', 'no', 'abstain'].map(c => (
+                                            <button key={c} onClick={() => castVote(bill, c)} className={`py-3 rounded-lg font-black text-base border-2 transition-all ${myBallot?.choice === c ? VOTE_STYLE[c] + ' ring-2 ring-offset-1 ring-indigo-400' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
+                                                {c === 'yes' ? '⭕ 찬성' : c === 'no' ? '❌ 반대' : '➖ 기권'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        )}
+                        {role === 'teacher' && (
+                            <div className="mt-3 p-2 bg-indigo-50 rounded-lg">
+                                <p className="text-xs font-bold text-indigo-800 mb-2">👩‍🏫 실시간 집계: 찬성 {yes} · 반대 {no} · 기권 {abstain}</p>
+                                <button onClick={() => { setModalType('voteBoard'); setFormData({ id: bill.id, attendOverride: '', percent: voteRule.percent }); }} className="w-full bg-indigo-600 text-white py-2 rounded font-bold text-sm hover:bg-indigo-700">📊 투표자 현황 보기 · 마감</button>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+            // ===================================================
 
             // [삭제됨] 과거 "회기별 학생 명부 → 전역 명부" 1회 이관 코드가 여기 있었으나,
             // globalStudents의 초기값(null)과 "문서가 아직 로딩되지 않음"을 구분하지 못해
@@ -274,8 +450,13 @@
             // 덮어써서 법률집 전체가 사라지는 lost-update가 발생할 수 있었음.
             const updateGlobalLaws = (updater) => {
                 const docRef = db.collection('settings').doc('laws');
+                const backupRef = db.collection('settings').doc('lawsBackup');
                 return db.runTransaction((transaction) => transaction.get(docRef).then((doc) => {
                     const latest = (doc.exists && doc.data().lawList) || initialLawsData;
+                    // 안전장치: 바꾸기 직전의 법률집을 백업 문서에 보관 (사고 시 Firebase 콘솔에서 복구 가능)
+                    if (doc.exists && latest.length > 0) {
+                        transaction.set(backupRef, { lawList: latest, backedUpAt: new Date().toISOString() });
+                    }
                     transaction.set(docRef, { lawList: updater(latest) }, { merge: true });
                 }));
             };
@@ -381,6 +562,12 @@
                         updateBills(latestBills => latestBills.map(b => b.id === formData.id ? { ...b, title: formData.title, proposer: formData.proposer, sponsors: formData.sponsors, content: formData.content } : b));
                         break;
                     case 'deleteBill': updateBills(latestBills => latestBills.filter(b => b.id !== formData.id)); break;
+                    case 'voteRule': {
+                        const percent = Math.min(100, Math.max(1, Number(formData.percent) || DEFAULT_VOTE_RULE.percent));
+                        const newRule = { percent, base: formData.base === 'eligible' ? 'eligible' : 'attend', abstainAsAttend: !!formData.abstainAsAttend, autoLogout: !!formData.autoLogout };
+                        db.collection('settings').doc('global').set({ voteRule: newRule }, { merge: true });
+                        break;
+                    }
                     case 'confirmBill': updateBills(latestBills => latestBills.map(b => b.id === formData.id ? { ...b, status: formData.status } : b)); break;
                     case 'editReport': updateExecutiveData(latest => ({ ...latest, report: formData.report })); break;
                     case 'addComplaint':
@@ -404,7 +591,7 @@
                         break;
                     case 'deleteStudent': updateStudents(list => list.filter(s => s.id !== formData.id)); break;
                     case 'studentSettings':
-                        updateStudents(list => list.map(s => s.id === formData.id ? { ...s, password: formData.password || '', canCreateParty: !!formData.canCreateParty } : s));
+                        updateStudents(list => list.map(s => s.id === formData.id ? { ...s, password: formData.password || '', canCreateParty: !!formData.canCreateParty, noVote: !!formData.noVote } : s));
                         break;
                     case 'changePassword':
                         const newPasswords = { ...passwords };
@@ -691,13 +878,31 @@
                                                     }} className="bg-govBlue text-white px-4 py-2 rounded-lg hover:bg-blue-900 font-bold shadow w-full sm:w-auto text-sm transition-colors">
                                                         + 기존 법률 개정안 상정
                                                     </button>
+                                                    {role === 'teacher' && (
+                                                        <button onClick={() => { setModalType('voteRule'); setFormData({ ...voteRule }); }} className="bg-white text-indigo-700 border border-indigo-300 px-4 py-2 rounded-lg hover:bg-indigo-50 font-bold shadow w-full sm:w-auto text-sm transition-colors">
+                                                            ⚙️ 가결 기준 ({voteRule.base === 'eligible' ? '재적' : '출석'} {voteRule.percent}%)
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
                                         
                                         {/* 기존 입법 현황 (bills) */}
-                                        {legisSubTab === 'bills' && (
+                                        {legisSubTab === 'bills' && (() => {
+                                            const bills = viewingPastSession ? pastBills : currentSessionData.bills || [];
+                                            const canManage = (role === 'teacher' || role === 'council') && !viewingPastSession;
+                                            return (
                                             <>
+                                                {/* 회기 선택 (지난 회기 법안 열람) */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                                    <label className="text-sm font-bold text-gray-700 whitespace-nowrap">🗂️ 법안 회기 보기</label>
+                                                    <select value={billViewSession || currentSession} onChange={(e) => setBillViewSession(e.target.value === currentSession ? null : e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-bold">
+                                                        {sessionOptions.map(opt => <option key={opt} value={opt}>{opt}{opt === currentSession ? ' (현재 회기)' : ''}</option>)}
+                                                    </select>
+                                                    {viewingPastSession && (
+                                                        <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-bold">지난 회기 법안은 열람만 가능합니다{role === 'teacher' ? ' (계류 법안은 현재 회기로 가져올 수 있어요)' : ''}</span>
+                                                    )}
+                                                </div>
                                                 {/* 공포된 법안 (가결) */}
                                                 <div className="bg-green-50/50 p-6 rounded-xl border border-green-100">
                                                     <h3 className="text-xl font-bold text-green-800 mb-4 flex items-center">
@@ -710,14 +915,15 @@
                                                             bills.filter(b => b.status === '가결').map(bill => (
                                                                 <div key={bill.id} className="bg-white p-6 rounded-xl shadow-sm border border-green-200 flex flex-col h-full overflow-hidden relative">
                                                                     <div className="absolute top-0 right-0 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">가결</div>
-                                                                    <div className="flex justify-between items-start mb-3 mt-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>
+                                                                    <div className="flex justify-between items-start mb-3 mt-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData({ ...bill, _readOnly: viewingPastSession }); }}>
                                                                         <span className="text-xs text-gray-400">{bill.date}</span>
                                                                     </div>
-                                                                    <h3 className="text-lg font-bold text-gray-900 mb-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.title}</h3>
-                                                                    <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData(bill); }}>{bill.content}</p>
+                                                                    <h3 className="text-lg font-bold text-gray-900 mb-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData({ ...bill, _readOnly: viewingPastSession }); }}>{bill.title}</h3>
+                                                                    <p className="text-sm text-gray-600 mb-4 flex-grow line-clamp-2 cursor-pointer" onClick={() => { setModalType('viewBill'); setFormData({ ...bill, _readOnly: viewingPastSession }); }}>{bill.content}</p>
                                                                     <div className="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
                                                                         <p className="text-xs text-gray-500"><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
                                                                     </div>
+                                                                    {renderVoteResultLine(bill.voteResult)}
                                                                 </div>
                                                             ))
                                                         )}
@@ -730,8 +936,8 @@
                                                         <span className="text-2xl mr-2">⏳</span> 심사 중 및 부결 법안
                                                     </h3>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                        {bills.filter(b => b.status !== '가결').map(bill => (
-                                                            <div key={bill.id} onClick={() => { setModalType('viewBill'); setFormData(bill); }} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full cursor-pointer hover:shadow-md transition-shadow relative">
+                                                        {bills.filter(b => b.status !== '가결').sort((a, c) => (c.vote?.status === 'open' ? 1 : 0) - (a.vote?.status === 'open' ? 1 : 0)).map(bill => (
+                                                            <div key={bill.id} onClick={() => { setModalType('viewBill'); setFormData({ ...bill, _readOnly: viewingPastSession }); }} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full cursor-pointer hover:shadow-md transition-shadow relative">
                                                                 <div className="flex justify-between items-start mb-3">
                                                                     <span className={`text-xs px-2 py-1 rounded-full font-bold ${
                                                                         bill.status === '계류' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800'
@@ -743,19 +949,29 @@
                                                                 <div className="mt-auto pt-4 border-t border-gray-100 text-xs text-gray-500">
                                                                     <p><span className="font-semibold text-gray-700">발의자:</span> {maskName(bill.proposer)}</p>
                                                                     <p><span className="font-semibold text-gray-700">공동발의:</span> {bill.sponsors?.split(', ').map(s => maskName(s)).join(', ')}</p>
+                                                                    {bill.status === '부결' && renderVoteResultLine(bill.voteResult)}
                                                                 </div>
-                                                                {(role === 'teacher' || role === 'council') && bill.status === '계류' && (
-                                                                    <div className="flex gap-2 mt-4 pt-2">
+                                                                {!viewingPastSession && bill.status === '계류' && bill.vote && (bill.vote.status === 'open' || bill.vote.status === 'closing') && renderVotePanel(bill)}
+                                                                {viewingPastSession && role === 'teacher' && bill.status === '계류' && (
+                                                                    <button onClick={(e) => { e.stopPropagation(); if (confirm(`[${bill.title}] 법안을 ${currentSession} 회기로 가져올까요?`)) bringBillToCurrentSession(billViewSession, bill.id); }} className="mt-4 w-full bg-indigo-50 text-indigo-700 py-1.5 rounded border border-indigo-200 hover:bg-indigo-100 text-sm font-bold">↪ 현재 회기({currentSession})로 가져오기</button>
+                                                                )}
+                                                                {canManage && bill.status === '계류' && !(bill.vote && (bill.vote.status === 'open' || bill.vote.status === 'closing')) && (
+                                                                    <>
+                                                                    <button onClick={(e) => { e.stopPropagation(); if (confirm(`[${bill.title}] 법안의 전자투표를 시작할까요?`)) openVote(bill); }} className="mt-4 w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-indigo-700 shadow">🗳️ 전자투표 시작</button>
+                                                                    <div className="flex gap-2 mt-2">
                                                                         <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '가결' }); }} className="flex-1 bg-green-50 text-green-700 py-1 rounded border border-green-200 hover:bg-green-100 text-sm font-bold">가결</button>
                                                                         <button onClick={(e) => { e.stopPropagation(); setModalType('confirmBill'); setFormData({ id: bill.id, title: bill.title, status: '부결' }); }} className="flex-1 bg-red-50 text-red-700 py-1 rounded border border-red-200 hover:bg-red-100 text-sm font-bold">부결</button>
                                                                     </div>
+                                                                    <p className="text-[10px] text-gray-400 text-center mt-1">위 가결/부결은 투표 없이 바로 처리하는 수동 버튼입니다</p>
+                                                                    </>
                                                                 )}
                                                             </div>
                                                         ))}
                                                     </div>
                                                 </div>
                                             </>
-                                        )}
+                                            );
+                                        })()}
 
                                         {/* 현행 법률집 (전역 저장) */}
                                         {legisSubTab === 'laws' && (
@@ -857,7 +1073,7 @@
                                                     {students.map((student) => (
                                                         <tr key={student.id} className="hover:bg-gray-50 transition-colors">
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.id}</td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{maskName(student.name)}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{maskName(student.name)}{student.noVote && <span className="ml-2 text-[10px] font-bold bg-gray-100 text-gray-500 border border-gray-200 rounded px-1.5 py-0.5">투표 제외</span>}</td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-govBlue text-right">{student.coins.toLocaleString()} C</td>
                                                             {(role === 'teacher' || role === 'council') && (
                                                                 <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -865,7 +1081,7 @@
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'deduct' }); }} className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold hover:bg-red-200">- 차감</button>
                                                                         <button onClick={() => { setModalType('adjustCoin'); setFormData({ id: student.id, name: student.name, amount: '', type: 'add' }); }} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold hover:bg-blue-200">+ 지급</button>
                                                                         {role === 'teacher' && (
-                                                                            <button onClick={() => { setModalType('studentSettings'); setFormData({ id: student.id, name: student.name, password: student.password || '', canCreateParty: !!student.canCreateParty }); }} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold hover:bg-gray-200">⚙ 설정</button>
+                                                                            <button onClick={() => { setModalType('studentSettings'); setFormData({ id: student.id, name: student.name, password: student.password || '', canCreateParty: !!student.canCreateParty, noVote: !!student.noVote }); }} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold hover:bg-gray-200">⚙ 설정</button>
                                                                         )}
                                                                     </div>
                                                                 </td>
@@ -1086,6 +1302,8 @@
                                     {modalType === 'editBill' && '📜 법안 내용 수정'}
                                     {modalType === 'viewBill' && '📜 법안 상세 보기'}
                                     {modalType === 'confirmBill' && '⚖️ 법안 처리'}
+                                    {modalType === 'voteRule' && '⚙️ 전자투표 가결 기준'}
+                                    {modalType === 'voteBoard' && '🗳️ 전자투표 현황판'}
                                     {modalType === 'deleteBill' && '🗑️ 법안 삭제'}
                                     {modalType === 'viewPoll' && '🗳️ 투표하기 (번호 전용 비번 필요)'}
                                     {modalType === 'viewPollStatus' && '📊 실시간 투표 현황'}
@@ -1341,7 +1559,19 @@
                                                 <p className="mb-1"><strong className="text-gray-800">발의자:</strong> {maskName(formData.proposer)}</p>
                                                 <p><strong className="text-gray-800">공동발의:</strong> {formData.sponsors?.split(', ').map(s => maskName(s)).join(', ')}</p>
                                             </div>
-                                            {(role === 'teacher' || role === 'council') && formData.status !== '가결' && (
+                                            {formData.voteResult && (
+                                                <div className="border-t pt-4">
+                                                    <p className="text-sm font-bold text-gray-800">🗳️ 전자투표 결과</p>
+                                                    {renderVoteResultLine(formData.voteResult)}
+                                                    {role === 'teacher' && (
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {(formData.voteResult.ballots || []).map(b => <span key={b.id} className={`text-xs font-bold px-2 py-0.5 rounded border ${VOTE_STYLE[b.choice]}`}>{b.name} {VOTE_LABEL[b.choice]}</span>)}
+                                                            {(formData.voteResult.notVoted || []).map(b => <span key={b.id} className="text-xs font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">{b.name} 미투표</span>)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {(role === 'teacher' || role === 'council') && formData.status !== '가결' && !formData._readOnly && (
                                                 <div className="flex gap-2 mt-4 pt-4 border-t border-gray-200">
                                                     <button onClick={() => setModalType('editBill')} className="flex-1 bg-gray-100 text-gray-700 py-2 rounded hover:bg-gray-200 font-bold text-sm transition-colors">수정하기</button>
                                                     <button onClick={() => setModalType('deleteBill')} className="flex-1 bg-red-50 text-red-700 py-2 rounded hover:bg-red-100 font-bold text-sm transition-colors">삭제하기</button>
@@ -1349,6 +1579,90 @@
                                             )}
                                         </div>
                                     )}
+
+                                    {modalType === 'voteRule' && (
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">가결에 필요한 찬성 비율 (%)</label>
+                                                <input type="number" min="1" max="100" name="percent" value={formData.percent ?? ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2 text-lg font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">비율을 계산하는 기준 인원</label>
+                                                <select name="base" value={formData.base || 'attend'} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2">
+                                                    <option value="attend">출석 인원 (투표에 참여한 학생 수)</option>
+                                                    <option value="eligible">재적 인원 (투표권이 있는 학생 전체, 현재 {eligibleVoters.length}명)</option>
+                                                </select>
+                                            </div>
+                                            <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                                <input type="checkbox" checked={!!formData.abstainAsAttend} onChange={(e) => setFormData({ ...formData, abstainAsAttend: e.target.checked })} />
+                                                기권도 출석 인원에 포함 (출석 기준일 때)
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                                <input type="checkbox" checked={!!formData.autoLogout} onChange={(e) => setFormData({ ...formData, autoLogout: e.target.checked })} />
+                                                투표 후 자동 로그아웃 (기기를 돌려 쓸 때 대리투표 방지)
+                                            </label>
+                                            {(() => {
+                                                const ex = calcVoteResult({ yes: 0, no: 0, abstain: 0, eligible: eligibleVoters.length, percent: formData.percent || 0, base: 'eligible', abstainAsAttend: true });
+                                                return <p className="text-sm bg-indigo-50 text-indigo-800 rounded p-3">예시: 출석 {eligibleVoters.length}명이면 찬성 <b>{ex.needed}표 이상</b>이어야 가결됩니다. 투표 대상에서 뺄 학생(예: 대통령)은 사법부 탭 → 학생 ⚙ 설정에서 '전자투표 제외'를 체크하세요.</p>;
+                                            })()}
+                                        </div>
+                                    )}
+
+                                    {modalType === 'voteBoard' && (() => {
+                                        const bill = bills.find(b => b.id === formData.id);
+                                        if (!bill || !bill.vote) return <p className="text-gray-500">투표가 종료되었거나 찾을 수 없습니다.</p>;
+                                        const ballots = ballotsByBill[bill.id] || [];
+                                        const { yes, no, abstain, valid } = countBallots(ballots);
+                                        const preview = calcVoteResult({ yes, no, abstain, eligible: eligibleVoters.length, percent: formData.percent, base: voteRule.base, abstainAsAttend: voteRule.abstainAsAttend, attendOverride: formData.attendOverride });
+                                        return (
+                                            <div className="space-y-4">
+                                                <h4 className="text-lg font-black text-gray-900">{bill.title}</h4>
+                                                <div className="grid grid-cols-4 gap-2 text-center">
+                                                    <div className="bg-green-50 rounded-lg p-2"><p className="text-xs text-green-700 font-bold">찬성</p><p className="text-2xl font-black text-green-700">{yes}</p></div>
+                                                    <div className="bg-red-50 rounded-lg p-2"><p className="text-xs text-red-700 font-bold">반대</p><p className="text-2xl font-black text-red-700">{no}</p></div>
+                                                    <div className="bg-gray-50 rounded-lg p-2"><p className="text-xs text-gray-600 font-bold">기권</p><p className="text-2xl font-black text-gray-700">{abstain}</p></div>
+                                                    <div className="bg-amber-50 rounded-lg p-2"><p className="text-xs text-amber-700 font-bold">미투표</p><p className="text-2xl font-black text-amber-700">{eligibleVoters.length - valid.length}</p></div>
+                                                </div>
+                                                <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg divide-y">
+                                                    {eligibleVoters.map(st => {
+                                                        const b = valid.find(x => x.id === st.id);
+                                                        return (
+                                                            <div key={st.id} className="flex justify-between items-center px-3 py-1.5 text-sm">
+                                                                <span className="font-bold text-gray-800">{st.id}번 {st.name}</span>
+                                                                {b ? <span className={`text-xs font-bold px-2 py-0.5 rounded border ${VOTE_STYLE[b.choice]}`}>{VOTE_LABEL[b.choice]}</span>
+                                                                   : <span className="text-xs font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">미투표</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">출석 인원 (비우면 자동 {preview.autoAttend}명)</label>
+                                                        <input type="number" min="0" name="attendOverride" value={formData.attendOverride ?? ''} onChange={handleFormChange} placeholder={String(preview.autoAttend)} className="w-full border border-gray-300 rounded p-2" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">가결 기준 (%)</label>
+                                                        <input type="number" min="1" max="100" name="percent" value={formData.percent ?? ''} onChange={handleFormChange} className="w-full border border-gray-300 rounded p-2" />
+                                                    </div>
+                                                </div>
+                                                <p className={`text-sm font-bold rounded p-3 ${preview.passed ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                                                    지금 마감하면: 출석 {preview.attend}명 × {preview.percent}% → 찬성 {preview.needed}표 필요 · 현재 찬성 {yes}표 → <span className="text-lg">{preview.passed ? '가결' : '부결'}</span>
+                                                </p>
+                                                {modalError && <p className="text-red-600 text-xs font-bold">❌ {modalError}</p>}
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => { if (confirm('투표를 취소하고 투표 전 상태로 되돌릴까요? (이번 투표 기록은 집계되지 않습니다)')) { cancelVote(bill); closeModal(); } }} className="px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded font-bold hover:bg-gray-200">투표 취소</button>
+                                                    <button onClick={closeModal} className="px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded font-bold hover:bg-gray-200">닫기</button>
+                                                    <button disabled={!!formData._closing} onClick={() => {
+                                                        if (!confirm('투표를 마감하고 결과를 확정할까요? 마감 후에는 학생들이 더 이상 투표할 수 없습니다.')) return;
+                                                        setFormData({ ...formData, _closing: true });
+                                                        finalizeVote(bill, formData.attendOverride, formData.percent || voteRule.percent)
+                                                            .then(r => { closeModal(); setVoteToast(`[${bill.title}] ${r.passed ? '가결' : '부결'} (찬성 ${r.yes} / 필요 ${r.needed})`); setTimeout(() => setVoteToast(''), 5000); })
+                                                            .catch(err => { console.error(err); setModalError('마감 저장에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.'); setFormData(f => ({ ...f, _closing: false })); });
+                                                    }} className="flex-1 px-3 py-2 text-sm bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700 disabled:opacity-50">{formData._closing ? '집계 중…' : '🔨 마감하고 결과 확정'}</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {modalType === 'confirmBill' && (
                                         <p className="text-gray-700 text-lg"><strong>[{formData.title}]</strong> 법안을 <span className={formData.status === '가결' ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{formData.status}</span> 처리하시겠습니까?</p>
@@ -1465,6 +1779,10 @@
                                             <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
                                                 <input type="checkbox" checked={!!formData.canCreateParty} onChange={(e) => setFormData({ ...formData, canCreateParty: e.target.checked })} />
                                                 정당 개설 권한 부여
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                                <input type="checkbox" checked={!!formData.noVote} onChange={(e) => setFormData({ ...formData, noVote: e.target.checked })} />
+                                                법안 전자투표 제외 (예: 대통령)
                                             </label>
                                         </div>
                                     )}
@@ -1667,7 +1985,7 @@
                                 </div>
 
                                 <div className="flex justify-end space-x-2">
-                                    {modalType === 'viewBill' || modalType === 'viewFreePost' || modalType === 'viewParty' || modalType === 'partyManage' ? (
+                                    {modalType === 'voteBoard' ? null : modalType === 'viewBill' || modalType === 'viewFreePost' || modalType === 'viewParty' || modalType === 'partyManage' ? (
                                         <button onClick={closeModal} className="px-4 py-2 text-sm bg-govBlue text-white rounded hover:bg-blue-900 font-bold w-full mt-2">닫기</button>
                                     ) : (
                                         <>
@@ -1683,6 +2001,9 @@
                     )}
 
                     {}
+                    {voteToast && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-gray-900 text-white text-sm font-bold px-5 py-3 rounded-xl shadow-2xl max-w-[90vw] text-center">{voteToast}</div>
+                    )}
                     {showLoginModal && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
