@@ -133,12 +133,11 @@
 
         // =====================================================================
         // 🍱 오늘의 급식 (나이스 교육정보 개방 포털 - 급식식단정보 Open API)
-        //  * 학교/인증키를 바꾸려면 아래 LUNCH_CONFIG 세 줄만 고치면 됩니다.
+        //  * 인증키는 코드에 없습니다. 급식 중계 서버(Netlify)가 보관합니다.
         // =====================================================================
         const LUNCH_CONFIG = {
-            KEY: '88544ce0d2f345398b174625d5a20a93',   // 인증키
-            ATPT_OFCDC_SC_CODE: 'Q10',                 // 시도교육청코드
-            SD_SCHUL_CODE: '8692009',                  // 행정표준코드(학교코드)
+            // 급식 중계 서버 주소 (인증키는 이 서버 안에만 있어서 여기엔 없어요)
+            PROXY_URL: 'https://hakmin-meal-proxy.netlify.app/api/meal',
             SCHOOL_NAME: '장성중앙초등학교'
         };
         const LUNCH_ALLERGY = { 1: '난류', 2: '우유', 3: '메밀', 4: '땅콩', 5: '대두', 6: '밀', 7: '고등어', 8: '게', 9: '새우', 10: '돼지고기', 11: '복숭아', 12: '토마토', 13: '아황산류', 14: '호두', 15: '닭고기', 16: '쇠고기', 17: '오징어', 18: '조개류', 19: '잣' };
@@ -181,7 +180,7 @@
                 setStatus('loading');
                 const from = lunchYmd(weekStart);
                 const to = lunchYmd(lunchAddDays(weekStart, 4));
-                const url = `https://open.neis.go.kr/hub/mealServiceDietInfo?KEY=${LUNCH_CONFIG.KEY}&Type=json&pIndex=1&pSize=100&ATPT_OFCDC_SC_CODE=${LUNCH_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${LUNCH_CONFIG.SD_SCHUL_CODE}&MLSV_FROM_YMD=${from}&MLSV_TO_YMD=${to}`;
+                const url = `${LUNCH_CONFIG.PROXY_URL}?from=${from}&to=${to}`;
                 fetch(url)
                     .then(r => r.json())
                     .then(j => {
