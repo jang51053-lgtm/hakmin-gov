@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학민정부 실시간 대시보드 v5.6 (개정안 기능 추가)</title>
+    <title>학민정부 실시간 대시보드 v5.7 (정당 탈퇴 개선)</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -933,6 +933,12 @@
 
             const requestJoinParty = (partyId) => {
                 if (!loggedInStudent || myParty) return;
+                // [개선] 여러 정당에 동시에 신청해 중복 가입되던 문제 방지: 신청은 한 번에 한 정당만
+                if (parties.some(q => (q.pendingJoin || []).includes(loggedInStudent.id))) {
+                    setVoteToast('이미 다른 정당에 가입 신청 중이에요. 승인 또는 거부된 뒤에 다시 신청해 주세요.');
+                    setTimeout(() => setVoteToast(''), 3500);
+                    return;
+                }
                 updateParties(list => list.map(p => {
                     if (p.id !== partyId) return p;
                     if ((p.memberIds || []).includes(loggedInStudent.id) || (p.pendingJoin || []).includes(loggedInStudent.id)) return p;
@@ -948,13 +954,25 @@
                 }));
             };
             const approveJoin = (partyId, studentId) => {
-                updateParties(list => list.map(p => p.id === partyId ? { ...p, memberIds: [...(p.memberIds || []), studentId], pendingJoin: (p.pendingJoin || []).filter(id => id !== studentId) } : p));
+                updateParties(list => {
+                    // [개선] 이미 다른 정당 당원이면 중복 가입시키지 않고 신청만 정리
+                    const alreadyElsewhere = list.some(q => q.id !== partyId && (q.memberIds || []).includes(studentId));
+                    return list.map(p => {
+                        if (p.id === partyId) {
+                            const pj = (p.pendingJoin || []).filter(id => id !== studentId);
+                            if (alreadyElsewhere || (p.memberIds || []).includes(studentId)) return { ...p, pendingJoin: pj };
+                            return { ...p, memberIds: [...(p.memberIds || []), studentId], pendingJoin: pj };
+                        }
+                        // 승인된 학생이 넣어 둔 다른 정당의 가입 신청은 자동 정리
+                        return { ...p, pendingJoin: (p.pendingJoin || []).filter(id => id !== studentId) };
+                    });
+                });
             };
             const rejectJoin = (partyId, studentId) => {
                 updateParties(list => list.map(p => p.id === partyId ? { ...p, pendingJoin: (p.pendingJoin || []).filter(id => id !== studentId) } : p));
             };
             const approveLeave = (partyId, studentId) => {
-                updateParties(list => list.map(p => p.id === partyId ? {
+                updateParties(list => list.map(p => p.id === partyId && p.leaderId !== studentId ? {
                     ...p,
                     memberIds: (p.memberIds || []).filter(id => id !== studentId),
                     pendingLeave: (p.pendingLeave || []).filter(id => id !== studentId),
@@ -968,7 +986,7 @@
                 updateParties(list => list.map(p => p.id === partyId ? { ...p, coreMemberId: p.coreMemberId === studentId ? null : studentId } : p));
             };
             const transferLeader = (partyId, studentId) => {
-                updateParties(list => list.map(p => p.id === partyId ? { ...p, leaderId: studentId, coreMemberId: p.coreMemberId === studentId ? null : p.coreMemberId } : p));
+                updateParties(list => list.map(p => p.id === partyId ? { ...p, leaderId: studentId, coreMemberId: p.coreMemberId === studentId ? null : p.coreMemberId, pendingLeave: (p.pendingLeave || []).filter(id => id !== studentId) } : p));
             };
             const saveSubsidyInputs = (partyId, billsPassed, billsProposed) => {
                 updateParties(list => list.map(p => p.id === partyId ? {
@@ -1502,7 +1520,11 @@
                                                     <div key={party.id} onClick={() => { setModalType('viewParty'); setFormData(party); }} className={`p-5 rounded-xl shadow-sm border cursor-pointer hover:shadow-md transition-all ${partyColor.bg} ${partyColor.border}`}>
                                                         <div className="flex justify-between items-start mb-2">
                                                             <h3 className="text-lg font-bold text-gray-900">{party.name}</h3>
-                                                            {isLeaderOrCore && <span className="text-xs bg-govGold/20 text-govBlue px-2 py-1 rounded-full font-bold">내 정당</span>}
+                                                            <div className="flex flex-col items-end gap-1">
+                                                                {isLeaderOrCore && <span className="text-xs bg-govGold/20 text-govBlue px-2 py-1 rounded-full font-bold">내 정당</span>}
+                                                                {(isLeaderOrCore || role === 'teacher') && (party.pendingLeave || []).length > 0 && <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full font-bold animate-pulse">📤 탈퇴 신청 {(party.pendingLeave || []).length}건</span>}
+                                                                {(isLeaderOrCore || role === 'teacher') && (party.pendingJoin || []).length > 0 && <span className="text-xs bg-indigo-500 text-white px-2 py-1 rounded-full font-bold">📥 가입 신청 {(party.pendingJoin || []).length}건</span>}
+                                                            </div>
                                                         </div>
                                                         <p className="text-xs text-gray-500 mb-2">당원 {members.length}명</p>
                                                         <div className="flex flex-wrap gap-1.5">
@@ -2087,12 +2109,49 @@
                                                 {loggedInStudent && isMember && party.leaderId !== loggedInStudent.id && !hasPendingLeave && (
                                                     <button onClick={() => requestLeaveParty(party.id)} className="w-full bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-sm">탈퇴 신청하기</button>
                                                 )}
-                                                {hasPendingLeave && <p className="text-sm text-center text-red-500 font-bold py-2">탈퇴 승인 대기중...</p>}
+                                                {hasPendingLeave && <p className="text-sm text-center text-red-500 font-bold py-2">탈퇴 승인 대기중... (당 대표/핵심 당원이 승인해야 탈퇴돼요)</p>}
+                                                {loggedInStudent && isMember && party.leaderId === loggedInStudent.id && (
+                                                    <p className="text-xs text-gray-500 bg-gray-50 rounded p-2">👑 당 대표는 바로 탈퇴할 수 없어요. '당 관리'에서 다른 당원에게 대표를 넘긴 뒤 탈퇴를 신청하세요. (당원이 혼자라면 선생님께 정당 해산을 요청하세요.)</p>
+                                                )}
+                                                {isLeaderOrCore && ((party.pendingLeave || []).length + (party.pendingJoin || []).length) > 0 && (
+                                                    <p className="text-sm text-center text-red-600 font-bold bg-red-50 border border-red-200 rounded-lg py-2">🔔 처리할 신청이 있어요 · 탈퇴 {(party.pendingLeave || []).length}건 · 가입 {(party.pendingJoin || []).length}건 → 아래 '당 관리'에서 확인하세요</p>
+                                                )}
                                                 {isLeaderOrCore && (
                                                     <button onClick={() => {
                                                         if (!party.password) { setModalType('setPartyPassword'); setFormData({ partyId: party.id, newPwd: '' }); }
                                                         else { setModalType('enterPartyPassword'); setFormData({ partyId: party.id, pwdInput: '' }); }
-                                                    }} className="w-full bg-govBlue text-white py-2 rounded-lg font-bold text-sm">🛠️ 당 관리</button>
+                                                    }} className="w-full bg-govBlue text-white py-2 rounded-lg font-bold text-sm">🛠️ 당 관리{((party.pendingLeave || []).length + (party.pendingJoin || []).length) > 0 ? ` (신청 ${(party.pendingLeave || []).length + (party.pendingJoin || []).length}건)` : ''}</button>
+                                                )}
+                                                {role === 'teacher' && (
+                                                    <div className="space-y-2 pt-2 border-t">
+                                                        <p className="text-xs font-bold text-gray-600">👩‍🏫 선생님 처리 (대표 대신)</p>
+                                                        {(party.pendingJoin || []).map(sid => { const st = students.find(x => x.id === sid); return (
+                                                            <div key={'tj' + sid} className="flex justify-between items-center bg-indigo-50 p-2 rounded border border-indigo-100">
+                                                                <span className="text-xs font-bold">📥 가입 신청 · {st ? st.name : sid}</span>
+                                                                <div className="flex gap-1">
+                                                                    <button onClick={() => approveJoin(party.id, sid)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold">승인</button>
+                                                                    <button onClick={() => rejectJoin(party.id, sid)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold">거부</button>
+                                                                </div>
+                                                            </div>); })}
+                                                        {(party.pendingLeave || []).map(sid => { const st = students.find(x => x.id === sid); return (
+                                                            <div key={'tl' + sid} className="flex justify-between items-center bg-red-50 p-2 rounded border border-red-100">
+                                                                <span className="text-xs font-bold">📤 탈퇴 신청 · {st ? st.name : sid}</span>
+                                                                <div className="flex gap-1">
+                                                                    <button onClick={() => approveLeave(party.id, sid)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold">승인</button>
+                                                                    <button onClick={() => rejectLeave(party.id, sid)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold">거부</button>
+                                                                </div>
+                                                            </div>); })}
+                                                        {members.filter(m => m.id !== party.leaderId).length > 0 && (
+                                                            <details className="text-xs">
+                                                                <summary className="cursor-pointer font-bold text-gray-600">당원 직접 탈퇴시키기</summary>
+                                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                                    {members.filter(m => m.id !== party.leaderId).map(m => (
+                                                                        <button key={m.id} onClick={() => { if (window.confirm(m.name + ' 학생을 ' + party.name + '에서 탈퇴시킬까요?')) approveLeave(party.id, m.id); }} className="px-2 py-1 rounded-full border border-red-200 bg-white text-red-600 font-bold">{m.name} ✕</button>
+                                                                    ))}
+                                                                </div>
+                                                            </details>
+                                                        )}
+                                                    </div>
                                                 )}
                                                 {role === 'teacher' && (
                                                     <div className="flex gap-2 pt-2 border-t">
